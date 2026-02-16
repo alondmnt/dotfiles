@@ -32,7 +32,7 @@ We are a data science team. Our PRs touch ML pipelines, data transformations, mo
 
 ## Review techniques (ranked by value, from practice)
 
-These techniques apply broadly but are illustrated with examples from our codebase.
+These techniques apply broadly and are illustrated with real-world examples.
 
 ### 1. Question the premise — does this need to be built?
 
@@ -43,6 +43,8 @@ Before diving into implementation, ask two questions in order:
 2. **Does this already exist internally?** Does the feature duplicate functionality already in the system, host platform, or upstream dependency?
 
 If either answer is yes, the burden of proof shifts to the PR author to justify the custom path. Valid justifications exist (performance constraints, domain-specific requirements, licensing, avoiding a heavy dependency for a thin slice of functionality) — but they should be stated, not assumed.
+
+**Example from practice:** A PR added a custom retry-with-exponential-backoff wrapper around HTTP calls. The implementation was correct but duplicated `tenacity`, already in the project's dependencies.
 
 **Example from practice:** A plugin PR added Ctrl+click on tags to open the host app's native tag view. The implementation was complex (DB lookup → N+1 API calls → undocumented command), but the core question was simpler: this is functionally identical to clicking the same tag in the host app's built-in tag sidebar. The entire code review became moot once the duplication was identified.
 
@@ -59,7 +61,7 @@ The highest-value bugs come from following a value from its entry point to its f
 
 **Example from practice:** A tool accepted a `region` parameter, but the serving layer hardcoded `region="low"` and never forwarded it. Each file looked correct in isolation. The bug was only visible by tracing the parameter across three files.
 
-**Example from practice:** Conformal model files existed on disk, but a missing dependency (`mapie`) caused `joblib.load()` to fail silently. The code caught the exception, returned `null` intervals, and the LLM fabricated confidence intervals to fill the gap. Found by asking "why is this null?" and following the chain: file exists → load fails → silent catch → null output → hallucinated report values.
+**Example from practice:** Serialised model files existed on disk, but a missing optional dependency caused `joblib.load()` to fail silently. The code caught the exception, returned `null` predictions, and a downstream LLM fabricated plausible-looking values to fill the gap. Found by asking "why is this null?" and following the chain: file exists → load fails → silent catch → null output → hallucinated report values.
 
 **How to do it:**
 - Pick a parameter, config value, or data artifact introduced in the PR
@@ -70,7 +72,7 @@ The highest-value bugs come from following a value from its entry point to its f
 
 When a PR fixes failing tests or evals, ask: **did it fix the test to match correct behaviour, or weaken the test to pass the current output?**
 
-**Example from practice:** An eval went from per-paragraph cohort-size checking to report-level checking. One `N=X` anywhere in the report now satisfied all percentile claims everywhere. Another eval went from content verification (checking reported values match tool output) to tool-execution-only checking (did the tool run?). Both made the eval suite pass, but fabricated data would no longer be caught.
+**Example from practice:** An eval went from per-section granular checking to document-level checking. One `N=X` anywhere in the output now satisfied all statistical claims everywhere. Another eval went from content verification (checking reported values match tool output) to tool-execution-only checking (did the tool run?). Both made the eval suite pass, but fabricated data would no longer be caught.
 
 **How to do it:**
 - For each test/eval change, ask: "What could now pass that shouldn't?"
@@ -81,7 +83,7 @@ When a PR fixes failing tests or evals, ask: **did it fix the test to match corr
 
 When a PR claims to close issues, verify the claims against the actual code.
 
-**Example from practice:** PR claimed to close 4 issues. Cross-referencing showed: metadata contained blood test values but the report used "estimated defaults" instead, SCORE2 was mandated by the skill but missing from the report entirely, and a deleted skill file left orphan references in 5 other files.
+**Example from practice:** PR claimed to close 4 issues. Cross-referencing showed: user metadata contained real clinical values but the report used hardcoded defaults instead, a required risk score was mandated by the spec but missing from the output entirely, and a deleted config file left orphan references in 5 other files.
 
 **How to do it:**
 - Read each linked issue's acceptance criteria
@@ -96,9 +98,9 @@ Check whether the system's outputs can actually be derived from its inputs. This
 
 **For LLM/agent systems (grounding audit):** Check whether the LLM has the structured data to make the claims its prompt encourages. Read the prompt examples, identify each specific claim pattern, and verify it maps to a structured tool output.
 
-**Example from practice:** A skill showed examples like "glucose was 95-110 mg/dL from 6-10 AM." But the only tool computed daily aggregates — no hourly breakdowns existed. The LLM was incentivised to produce specific-sounding temporal claims with no data to ground them. Separately, an aligned-meals DataFrame (58 rows) was available via accessor tools and could ground meal-response patterns — but the skill didn't instruct the agent to use it.
+**Example from practice:** An agent prompt showed examples like "sensor reading was 95-110 units from 6-10 AM." But the only tool computed daily aggregates — no hourly breakdowns existed. The LLM was incentivised to produce specific-sounding temporal claims with no data to ground them. Separately, a detailed event-level DataFrame (58 rows) was available via accessor tools and could ground the temporal patterns — but the prompt didn't instruct the agent to use it.
 
-**Example from practice:** A report used "estimated default" values for HbA1c and fasting glucose, even though the patient metadata contained the real values. The model prediction was computed from wrong inputs. Found by cross-referencing the report text against the metadata JSON.
+**Example from practice:** A report used "estimated default" values for key biomarkers, even though the user's metadata contained real measurements. The model prediction was computed from wrong inputs. Found by cross-referencing the report text against the metadata JSON.
 
 **How to do it:**
 - Identify inputs (features, metadata, tool outputs) and outputs (predictions, reports, visualisations)
@@ -119,7 +121,7 @@ Simple flow questions often reveal architectural gaps.
 
 Code that loads models, reads configs, or imports optional packages often fails silently when the environment doesn't match the developer's setup. These are high-value findings because they cause subtle wrong results, not crashes.
 
-**Example from practice:** Conformal prediction models existed on disk but `mapie` wasn't installed. `joblib.load()` raised `ModuleNotFoundError`, the code caught it silently, and prediction intervals came back null. Downstream, the LLM fabricated confidence intervals because the skill examples showed them. One missing pip package caused fabricated numerical output.
+**Example from practice:** Serialised model files existed on disk but an optional dependency wasn't installed. `joblib.load()` raised `ModuleNotFoundError`, the code caught it silently, and uncertainty estimates came back null. Downstream, the LLM fabricated plausible intervals because the prompt examples showed them. One missing pip package caused fabricated numerical output.
 
 **How to do it:**
 - For new model/data files added in the PR, check that their loader dependencies are in `pyproject.toml` / `requirements.txt` / conda env
@@ -130,7 +132,7 @@ Code that loads models, reads configs, or imports optional packages often fails 
 
 When code consumes something produced by a separate process — a trained model, a config file, a database schema, an API response, a data pipeline output — it relies on unspoken assumptions about what that thing contains. Each side looks correct in isolation. Bugs live at the seam, and silent degradation (column filtering, default values, fallback branches) means no error is raised.
 
-**Example from practice:** A meal optimisation PR loaded a pre-trained PPGR model and listed `lipid_g` as an expected nutrient feature. The serving code was correct. But loading the actual serialised model and inspecting `scaler.feature_names_in_` showed 66 features — `lipid_g` not among them. The training config (stored only in MLflow S3, never committed) had a typo: `lipid_gf` instead of `lipid_g`. A silent column-intersection filter dropped the misspelled column without warning. The same config also recorded `baseline_choice: Ridge` while the actual model was XGBRegressor. Two metadata lies, one missing feature, zero errors raised. Found by crossing the code boundary and inspecting the artifact directly.
+**Example from practice:** A serving PR loaded a pre-trained prediction model and listed `weight_kg` as an expected input feature. The serving code was correct. But loading the actual serialised model and inspecting `scaler.feature_names_in_` showed 66 features — `weight_kg` not among them. The training config (stored only in a remote experiment tracker, never committed) had a typo: `weight_kgs` instead of `weight_kg`. A silent column-intersection filter dropped the misspelled column without warning. The same config also recorded `baseline_choice: Ridge` while the actual model was XGBRegressor. Two metadata lies, one missing feature, zero errors raised. Found by crossing the code boundary and inspecting the artifact directly.
 
 **How to do it:**
 - Identify every boundary where the PR's code consumes something produced elsewhere (model artifacts, configs, schemas, API contracts, upstream pipeline outputs)
