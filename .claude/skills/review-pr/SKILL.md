@@ -3,7 +3,7 @@ name: review-pr
 description: Review a GitHub pull request for defects, data integrity issues, and silent failures
 disable-model-invocation: true
 argument-hint: <pr-number-or-url>
-allowed-tools: Read, Grep, Glob, Bash(gh *)
+allowed-tools: Read, Grep, Glob, Bash(gh *, python -c *)
 ---
 
 ## PR context
@@ -24,6 +24,9 @@ We are a data science team. Our PRs touch ML pipelines, data transformations, mo
 - **Uncertainty is fine.** Label speculative findings as such. Include a confidence tag (High/Med/Low). Don't assert bugs you can't prove.
 - **High-signal only.** Skip cosmetics. Focus on correctness, data integrity, silent failures, and whether tests/evals actually catch what they claim.
 - **Don't hallucinate repo context.** Only assume what's visible in the diff, PR description, or files you've read. If a concern depends on something you haven't seen, ask — don't assert.
+- **Read beyond the diff.** Use Read, Grep, and Glob to examine surrounding code when tracing data flows, verifying contracts, or checking for stale references. The diff alone is rarely sufficient.
+
+**Large PRs:** For PRs over ~500 lines, prioritise logic and pipeline files over generated outputs, data files, and lock files. State what you deprioritised and why.
 
 ---
 
@@ -146,7 +149,7 @@ Adapt the format to the PR. Don't force rigid sections when they add no value. T
 What this PR does, why, and what it touches. Keep it short — the reviewer should understand scope in 30 seconds.
 
 ### Change map
-A table grouping changes by area, with risk levels and a one-line "why risky" for anything Medium or High.
+A table grouping changes by area, with risk level (Low / Medium / High) and a one-line "why risky" for anything Medium or High.
 
 ### Findings (prioritised)
 Each finding needs:
