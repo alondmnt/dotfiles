@@ -1,4 +1,10 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)"
+    ]
+  },
   "model": "opus",
   "attribution": {
     "commit": "",
