@@ -2,17 +2,24 @@
 name: review-pr
 description: Review a GitHub pull request for defects, data integrity issues, and silent failures
 disable-model-invocation: true
-argument-hint: <pr-number-or-url>
-allowed-tools: Read, Grep, Glob, Bash(gh *, python -c *)
+argument-hint: "[pr-number-or-url]"
+allowed-tools: Read, Grep, Glob, Bash(gh *, python -c *), AskUserQuestion
 ---
 
-## PR context
-
-- PR details: !`gh pr view $ARGUMENTS`
-- Changed files: !`gh pr diff $ARGUMENTS --name-only`
-- Full diff: !`gh pr diff $ARGUMENTS`
-
 ## Instructions
+
+**Step 1 — Fetch PR context:**
+
+Check whether the user provided a PR number or URL after `/review-pr`. If yes, run these commands to fetch context (they are independent — run them in parallel):
+- `gh pr view <number>`
+- `gh pr diff <number> --name-only`
+- `gh pr diff <number>`
+
+Then proceed with the review below.
+
+If no PR was specified, run `gh pr list --state open --limit 20` to list open PRs, then use AskUserQuestion to ask the user which PR to review (use PR numbers as option labels). Once selected, fetch context with the three commands above and proceed.
+
+**Step 2 — Review:**
 
 Help a human reviewer understand what changed, find real defects, and decide where to focus their attention. You are **not** the approver.
 
