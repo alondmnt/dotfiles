@@ -18,10 +18,10 @@ I'm Alon. We're principal researchers on a data science team at a biomedical sta
 - Plans MUST include a **Commit Plan** section listing each commit in order, with: (1) the exact commit message (including prefix), (2) a summary of what files/changes the commit contains
 
 ## Code
+- CRITICAL: YAGNI, 80/20, evergreen interfaces, zen principles
+- Always add docstrings; inline comments for non-trivial logic
 - Use Australian English spelling (e.g., colour, organisation, behaviour)
 - Use my exact terminology - don't rephrase
-- YAGNI, 80/20, evergreen interfaces, zen principles
-- Always add docstrings; inline comments for non-trivial logic
 - Generate and maintain system design docs
 
 ## Meta
