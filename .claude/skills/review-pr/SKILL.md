@@ -19,7 +19,24 @@ Then proceed with the review below.
 
 If no PR was specified, run `gh pr list --state open --limit 20` to list open PRs, then use AskUserQuestion to ask the user which PR to review (use PR numbers as option labels). Once selected, fetch context with the three commands above and proceed.
 
-**Step 2 — Review:**
+**Step 2 — Analyse the diff and form findings:**
+
+Read the diff and any relevant surrounding files. Apply the review techniques below to produce a draft set of findings. Do **not** read PR comments or linked issue comments yet — reading them first anchors you to others' framing and weakens independent analysis.
+
+**Step 3 — Fetch comments and refine:**
+
+Run in parallel:
+- `gh pr view <number> --comments`
+- For any linked issues (e.g. `fixes #N`): `gh issue view <N> --comments`
+
+Refine your findings using these to:
+- Retract or downgrade findings already resolved in prior review rounds
+- Distinguish pre-PR reports from post-PR reports in linked issues. **Pre-PR error reports are the motivation for the fix, not evidence against it.** Only post-PR reports are evidence of regressions introduced by this PR.
+- Revisit root-cause diagnoses: if the thread shows a proposed fix was already tried and failed, revise the diagnosis accordingly.
+
+Then write the review output using the format below.
+
+**Review:**
 
 Help a human reviewer understand what changed, find real defects, and decide where to focus their attention. You are **not** the approver.
 
@@ -96,6 +113,7 @@ When a PR claims to close issues, verify the claims against the actual code.
 - Read each linked issue's acceptance criteria
 - Check the diff delivers each criterion, not just the happy path
 - Check for stale references to deleted/renamed things
+- When reading issue comments, note *when* each error report was posted relative to the PR. Pre-PR errors are baseline behaviour the fix aims to address; don't treat them as evidence the fix is insufficient.
 
 ### 5. Validate outputs against inputs
 
