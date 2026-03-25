@@ -34,7 +34,7 @@ Refine your findings using these to:
 - Distinguish pre-PR reports from post-PR reports in linked issues. **Pre-PR error reports are the motivation for the fix, not evidence against it.** Only post-PR reports are evidence of regressions introduced by this PR.
 - Revisit root-cause diagnoses: if the thread shows a proposed fix was already tried and failed, revise the diagnosis accordingly.
 
-Then write the review output using the format below.
+Then write the review output using the format below. Include the contributor engagement assessment. Do **not** draft a contributor-facing comment yet — wait for the reviewer to discuss findings and ask for one. See the "Contributor comment" section for guidelines when that time comes.
 
 **Review:**
 
@@ -197,6 +197,42 @@ Explicitly list the 3-5 specific files/locations the human reviewer should read 
 
 ### Questions for the author
 Only questions that materially reduce risk. Each must say why you need the answer and where in the code it matters.
+
+### Contributor engagement assessment
+Evaluate the PR for signs of thoughtful work vs low-engagement / unreviewed agent output. This is not about whether agents were used — it's about whether the contributor understands what they're submitting. Assess code and PR communication independently (a contributor may use agents for code but engage thoughtfully in discussion, or vice versa).
+
+Signals to look for:
+- **Code understanding:** Does new code reuse existing patterns and call into existing functions, or does it duplicate logic from scratch? Are unrelated changes bundled without explanation?
+- **PR communication:** Does the description explain implementation decisions, or just echo the issue text? Do responses to review comments engage with the questions asked, or summarise what was done?
+- **Slop markers:** Inconsistent formatting that doesn't match surrounding code. Mechanical edge-case handling (silent fallbacks, bare catches) without considering UX implications. Generic commit messages.
+- **Cross-PR patterns:** If the contributor has prior PRs on the repo, check those interactions. Do they engage with questions or just post summaries of what they changed? This is stronger signal than any single PR.
+
+State your read briefly. This helps the reviewer calibrate how much architectural guidance to give vs comprehension questions to ask.
+
+---
+
+## Contributor comment
+
+After the reviewer has discussed and finalised the review findings, they may ask for a contributor-facing PR comment draft. When drafting:
+
+**Tone:**
+- Human, collegial. No corporate speak, no jargon walls, no em dashes. Write like a maintainer, not a review bot.
+- Light formatting. Use plain paragraphs for the main feedback, not bold headers or bullet walls. A PR comment that looks like a structured report reads as agent-generated. Numbered lists are fine for questions (easier to reference in replies).
+- Acknowledge what works, briefly and specifically ("the `buildHeaders()` refactor is a nice improvement" not "great work on this PR"). But be careful what you reinforce. Praising a specific implementation choice signals you want them to keep it.
+- Be direct about problems without being condescending. Name the issue, don't lecture.
+- Nudge the contributor to discover issues themselves ("try switching notes during a chat session and see what happens") rather than just stating the bug. This tests understanding and teaches debugging.
+
+**Structure:**
+- Lead with the one or two findings that would change the entire approach. Save smaller items for after those are addressed.
+- Ask before telling. Instead of "you're missing X," ask "what does X do in the existing flow?" If they know, the fix is obvious. If they don't, you've identified the gap.
+- Keep it short. One paragraph of substance, a few pointed questions. Not a numbered essay.
+- End with something specific and encouraging, not a generic closer. "This could end up being a really nice feature with some rework" beats "Happy to discuss any of this."
+- Match guidance depth to evidence of effort. If the PR shows genuine codebase engagement, give specific technical pointers. If it shows low engagement, ask broader comprehension questions first. Don't prescribe the architectural solution upfront if you're not sure the contributor can execute it. Wait for their response to the first round.
+
+**Probing questions:**
+- Questions should test whether the contributor understands the existing code, not just whether they can fix a specific line.
+- Don't ask questions you've already answered in the comment. Ask questions whose answers reveal understanding.
+- If the PR description already explains a choice, don't re-ask about it.
 
 ---
 
