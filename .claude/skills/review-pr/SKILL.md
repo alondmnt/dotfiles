@@ -47,7 +47,8 @@ We are a data science team. Our PRs touch ML pipelines, data transformations, mo
 - **Evidence over assertion.** Every finding needs a file path and line range (or function name + searchable token). No vague "somewhere in the diff."
 - **Uncertainty is fine.** Label speculative findings as such. Include a confidence tag (High/Med/Low). Don't assert bugs you can't prove.
 - **High-signal only.** Skip cosmetics. Focus on correctness, data integrity, silent failures, and whether tests/evals actually catch what they claim.
-- **Don't hallucinate repo context.** Only assume what's visible in the diff, PR description, or files you've read. If a concern depends on something you haven't seen, ask — don't assert.
+- **Don't hallucinate repo context.** Only assume what's visible in the diff, PR description, or files you've read. If a concern depends on something you haven't seen, ask — don't assert. This includes explanations for observed behaviour: don't assert *why* existing code behaves a certain way without reading it. Verify before putting it in a contributor comment.
+- **Verify external references.** If a contributor references another plugin, library, or codebase to justify a design choice, fetch and read it before accepting the comparison. Don't characterise it based on inference.
 - **Read beyond the diff.** Use Read, Grep, and Glob to examine surrounding code when tracing data flows, verifying contracts, or checking for stale references. The diff alone is rarely sufficient.
 
 **Large PRs:** For PRs over ~500 lines, prioritise logic and pipeline files over generated outputs, data files, and lock files. State what you deprioritised and why.
@@ -153,7 +154,18 @@ Code that loads models, reads configs, or imports optional packages often fails 
 - Search for `try/except ImportError` patterns — what degrades silently when a package is missing?
 - Check `pyproject.toml` changes: are new dependencies in the right group (required vs optional)?
 
-### 8. Verify implicit contracts at system boundaries
+### 8. Question complexity that compensates for wrong architecture
+
+When new code introduces significant complexity to work around a constraint, ask whether the constraint itself should exist. The simplest fix is often to remove the constraint, not engineer around it.
+
+**Example from practice:** A panel chat feature added `sessionStorage` persistence, a `MutationObserver`, and a hydration layer to survive DOM resets on every note switch. All of it was correct. All of it was unnecessary — it existed solely because the chat was embedded in the same panel whose HTML gets replaced. A separate panel would have made the entire layer redundant.
+
+**How to do it:**
+- When you see a cluster of defensive code (persistence, observers, hydration, retry logic), ask: what is this defending against?
+- Trace that constraint back to its source. Is the constraint inherent to the problem, or is it an architectural choice that could be revisited?
+- If removing the constraint would eliminate the complexity, flag the architecture, not just the implementation.
+
+### 9. Verify implicit contracts at system boundaries
 
 When code consumes something produced by a separate process — a trained model, a config file, a database schema, an API response, a data pipeline output — it relies on unspoken assumptions about what that thing contains. Each side looks correct in isolation. Bugs live at the seam, and silent degradation (column filtering, default values, fallback branches) means no error is raised.
 
@@ -204,7 +216,7 @@ Evaluate the PR for signs of thoughtful work vs low-engagement / unreviewed agen
 Signals to look for:
 - **Code understanding:** Does new code reuse existing patterns and call into existing functions, or does it duplicate logic from scratch? Are unrelated changes bundled without explanation?
 - **PR communication:** Does the description explain implementation decisions, or just echo the issue text? Do responses to review comments engage with the questions asked, or summarise what was done?
-- **Slop markers:** Inconsistent formatting that doesn't match surrounding code. Mechanical edge-case handling (silent fallbacks, bare catches) without considering UX implications. Generic commit messages.
+- **Slop markers:** Inconsistent formatting that doesn't match surrounding code. Mechanical edge-case handling (silent fallbacks, bare catches) without considering UX implications. Generic commit messages. Versioned storage keys and `// no-op` catch blocks as boilerplate. Complete rewrites between rounds submitted without any explanation of what changed or why — this is stronger signal than any single code quality issue.
 - **Cross-PR patterns:** If the contributor has prior PRs on the repo, check those interactions. Do they engage with questions or just post summaries of what they changed? This is stronger signal than any single PR.
 
 State your read briefly. This helps the reviewer calibrate how much architectural guidance to give vs comprehension questions to ask.
@@ -228,6 +240,7 @@ After the reviewer has discussed and finalised the review findings, they may ask
 - Keep it short. One paragraph of substance, a few pointed questions. Not a numbered essay.
 - End with something specific and encouraging, not a generic closer. "This could end up being a really nice feature with some rework" beats "Happy to discuss any of this."
 - Match guidance depth to evidence of effort. If the PR shows genuine codebase engagement, give specific technical pointers. If it shows low engagement, ask broader comprehension questions first. Don't prescribe the architectural solution upfront if you're not sure the contributor can execute it. Wait for their response to the first round.
+- For low-engagement multi-round PRs where comprehension hasn't been demonstrated, lead with: "Before we go further, can you walk me through the main architectural decisions in this PR and why you made them?" Don't give further findings until you have an answer. Questions with no Googleable answer (e.g. why did you put X here rather than Y) reveal understanding better than questions with obvious answers. If the contributor doesn't engage, that is itself the signal.
 
 **Probing questions:**
 - Questions should test whether the contributor understands the existing code, not just whether they can fix a specific line.
@@ -239,6 +252,7 @@ After the reviewer has discussed and finalised the review findings, they may ask
 ## What to skip
 
 - **Cosmetics.** Don't comment on naming, formatting, or style unless it causes confusion.
+- **Style and visual comments when architecture is unsettled.** If structural findings are still open (wrong component boundary, duplicated pipeline, missing abstraction), defer CSS and layout feedback to a later round. Flag them internally but don't raise them — the structure may change and the style discussion becomes moot.
 - **Generic checklists.** Don't mechanically run through security/auth/deploy/rollback checklists unless the PR actually touches those areas. Irrelevant checklist items are noise.
 - **Merge risk summaries.** The findings speak for themselves. Don't add a "safe to merge" / "needs changes" label — that's the human's call.
 - **Boilerplate sections.** If a section would be empty or trivially "N/A", omit it entirely.
