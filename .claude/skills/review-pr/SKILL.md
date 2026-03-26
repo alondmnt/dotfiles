@@ -69,22 +69,16 @@ Before diving into implementation, ask two questions in order:
 
 If either answer is yes, the burden of proof shifts to the PR author to justify the custom path. Valid justifications exist (performance constraints, domain-specific requirements, licensing, avoiding a heavy dependency for a thin slice of functionality) — but they should be stated, not assumed.
 
-**Example from practice:** A PR added a custom retry-with-exponential-backoff wrapper around HTTP calls. The implementation was correct but duplicated `tenacity`, already in the project's dependencies.
-
-**Example from practice:** A plugin PR added Ctrl+click on tags to open the host app's native tag view. The implementation was complex (DB lookup → N+1 API calls → undocumented command), but the core question was simpler: this is functionally identical to clicking the same tag in the host app's built-in tag sidebar. The entire code review became moot once the duplication was identified.
+**Example from practice:** A plugin PR added Ctrl+click on tags to open the host app's native tag view. The implementation was complex (DB lookup → N+1 API calls → undocumented command), but it was functionally identical to clicking the same tag in the host app's built-in sidebar. The entire code review became moot once the duplication was identified.
 
 **How to do it:**
-- Before reviewing implementation details, state in one sentence what the feature gives the user or what problem the code solves
-- Ask: is this a known, solved problem? Is there an off-the-shelf solution (library, service, platform feature, config change) that fits?
-- Ask: can the user or system already achieve this through an existing internal path?
-- If a custom implementation is justified, check whether it wraps or vendors the external solution rather than reimplementing from scratch
-- Watch for PRs that bundle a genuinely new behaviour change alongside a redundant feature (e.g., auto-showing a panel smuggled in ungated)
+- State in one sentence what the feature gives the user or what problem the code solves
+- Ask: can the user already achieve this through an existing internal or external path?
+- Watch for PRs that bundle a genuinely new behaviour change alongside a redundant feature
 
 ### 2. Trace the data flow end-to-end
 
 The highest-value bugs come from following a value from its entry point to its final use. Don't just read each file in isolation — trace the chain.
-
-**Example from practice:** A tool accepted a `region` parameter, but the serving layer hardcoded `region="low"` and never forwarded it. Each file looked correct in isolation. The bug was only visible by tracing the parameter across three files.
 
 **Example from practice:** Serialised model files existed on disk, but a missing optional dependency caused `joblib.load()` to fail silently. The code caught the exception, returned `null` predictions, and a downstream LLM fabricated plausible-looking values to fill the gap. Found by asking "why is this null?" and following the chain: file exists → load fails → silent catch → null output → hallucinated report values.
 
@@ -93,68 +87,17 @@ The highest-value bugs come from following a value from its entry point to its f
 - Follow it from where it enters the system to where it's consumed
 - Check: is it actually forwarded? Is it silently dropped? Is the error path swallowing information?
 
-### 3. Check whether tests/evals are genuine or weakened
+### 3. Additional checks
 
-When a PR fixes failing tests or evals, ask: **did it fix the test to match correct behaviour, or weaken the test to pass the current output?**
+Apply these as relevant — not every PR needs all of them.
 
-**Example from practice:** An eval went from per-section granular checking to document-level checking. One `N=X` anywhere in the output now satisfied all statistical claims everywhere. Another eval went from content verification (checking reported values match tool output) to tool-execution-only checking (did the tool run?). Both made the eval suite pass, but fabricated data would no longer be caught.
+- **Tests/evals: genuine or weakened?** When a PR changes tests, ask: "what could now pass that shouldn't?" Watch for granular checks replaced by coarse ones, content verification replaced by execution-only checks, and large simplifications (-600 lines) that lose capability.
+- **Cross-reference claims against reality.** If the PR claims to close issues, check the diff delivers each acceptance criterion. Check for stale references to deleted/renamed things. Distinguish pre-PR error reports (motivation for the fix) from post-PR reports (evidence of regression).
+- **Validate outputs against inputs.** Can the system's outputs actually be derived from its inputs? For ML: do features match what the model was trained on? For LLM agents: does the prompt encourage claims the structured tool outputs can't ground? (e.g., prompt examples show hourly breakdowns but the tool only computes daily aggregates.)
+- **Ask "where does X go?"** For each new artifact the PR introduces, check who consumes it, through what path, and whether the consumer resolves it. Watch for parallel pipelines doing similar things independently.
+- **Check dependency and environment assumptions.** Code that loads models or imports optional packages often fails silently when the environment doesn't match. Search for `try/except ImportError` and check whether new dependencies are in the right group (required vs optional).
 
-**How to do it:**
-- For each test/eval change, ask: "What could now pass that shouldn't?"
-- Check if the fix narrows false positives (good) or also opens false negatives (bad)
-- Pay special attention to large simplifications (-600 lines) — what capability was lost?
-
-### 4. Cross-reference claims against reality
-
-When a PR claims to close issues, verify the claims against the actual code.
-
-**Example from practice:** PR claimed to close 4 issues. Cross-referencing showed: user metadata contained real clinical values but the report used hardcoded defaults instead, a required risk score was mandated by the spec but missing from the output entirely, and a deleted config file left orphan references in 5 other files.
-
-**How to do it:**
-- Read each linked issue's acceptance criteria
-- Check the diff delivers each criterion, not just the happy path
-- Check for stale references to deleted/renamed things
-- When reading issue comments, note *when* each error report was posted relative to the PR. Pre-PR errors are baseline behaviour the fix aims to address; don't treat them as evidence the fix is insufficient.
-
-### 5. Validate outputs against inputs
-
-Check whether the system's outputs can actually be derived from its inputs. This applies at every level — model predictions from features, report claims from tool outputs, visualisations from data.
-
-**For ML pipelines:** Do the features flowing into the model match what it was trained on? Are transformations applied in the right order? Are default/fallback values used when real data exists?
-
-**For LLM/agent systems (grounding audit):** Check whether the LLM has the structured data to make the claims its prompt encourages. Read the prompt examples, identify each specific claim pattern, and verify it maps to a structured tool output.
-
-**Example from practice:** An agent prompt showed examples like "sensor reading was 95-110 units from 6-10 AM." But the only tool computed daily aggregates — no hourly breakdowns existed. The LLM was incentivised to produce specific-sounding temporal claims with no data to ground them. Separately, a detailed event-level DataFrame (58 rows) was available via accessor tools and could ground the temporal patterns — but the prompt didn't instruct the agent to use it.
-
-**Example from practice:** A report used "estimated default" values for key biomarkers, even though the user's metadata contained real measurements. The model prediction was computed from wrong inputs. Found by cross-referencing the report text against the metadata JSON.
-
-**How to do it:**
-- Identify inputs (features, metadata, tool outputs) and outputs (predictions, reports, visualisations)
-- For each output claim or value: can it be traced to a specific input? Or is it fabricated/defaulted when real data exists?
-- For LLM systems: check accessor tool limits (e.g., `df_head(n=100)`) against actual data sizes — can the LLM see enough data to make its claims?
-
-### 6. Ask "where does X go?"
-
-Simple flow questions often reveal architectural gaps.
-
-**Example from practice:** "Where are the visualisations stored? Embedded?" revealed that markdown referenced `./artifacts/plot_*.png` (relative paths to ephemeral files), the PDF generated completely different plots via a separate pipeline, and neither path actually rendered correctly. Two parallel visualisation systems, neither complete.
-
-**How to do it:**
-- For each new artifact/output the PR introduces, ask: who consumes it? Through what path? Does the consumer actually resolve it?
-- Check for parallel pipelines doing similar things independently
-
-### 7. Check dependency and environment assumptions
-
-Code that loads models, reads configs, or imports optional packages often fails silently when the environment doesn't match the developer's setup. These are high-value findings because they cause subtle wrong results, not crashes.
-
-**Example from practice:** Serialised model files existed on disk but an optional dependency wasn't installed. `joblib.load()` raised `ModuleNotFoundError`, the code caught it silently, and uncertainty estimates came back null. Downstream, the LLM fabricated plausible intervals because the prompt examples showed them. One missing pip package caused fabricated numerical output.
-
-**How to do it:**
-- For new model/data files added in the PR, check that their loader dependencies are in `pyproject.toml` / `requirements.txt` / conda env
-- Search for `try/except ImportError` patterns — what degrades silently when a package is missing?
-- Check `pyproject.toml` changes: are new dependencies in the right group (required vs optional)?
-
-### 8. Question complexity that compensates for wrong architecture
+### 4. Question complexity that compensates for wrong architecture
 
 When new code introduces significant complexity to work around a constraint, ask whether the constraint itself should exist. The simplest fix is often to remove the constraint, not engineer around it.
 
@@ -165,7 +108,7 @@ When new code introduces significant complexity to work around a constraint, ask
 - Trace that constraint back to its source. Is the constraint inherent to the problem, or is it an architectural choice that could be revisited?
 - If removing the constraint would eliminate the complexity, flag the architecture, not just the implementation.
 
-### 9. Verify implicit contracts at system boundaries
+### 5. Verify implicit contracts at system boundaries
 
 When code consumes something produced by a separate process — a trained model, a config file, a database schema, an API response, a data pipeline output — it relies on unspoken assumptions about what that thing contains. Each side looks correct in isolation. Bugs live at the seam, and silent degradation (column filtering, default values, fallback branches) means no error is raised.
 
@@ -227,24 +170,27 @@ State your read briefly. This helps the reviewer calibrate how much architectura
 
 After the reviewer has discussed and finalised the review findings, they may ask for a contributor-facing PR comment draft. When drafting:
 
-**Tone:**
+**Tone and format:**
 - Human, collegial. No corporate speak, no jargon walls, no em dashes. Write like a maintainer, not a review bot.
-- Light formatting. Use plain paragraphs for the main feedback, not bold headers or bullet walls. A PR comment that looks like a structured report reads as agent-generated. Numbered lists are fine for questions (easier to reference in replies).
-- Acknowledge what works, briefly and specifically ("the `buildHeaders()` refactor is a nice improvement" not "great work on this PR"). But be careful what you reinforce. Praising a specific implementation choice signals you want them to keep it.
-- Be direct about problems without being condescending. Name the issue, don't lecture.
-- Nudge the contributor to discover issues themselves ("try switching notes during a chat session and see what happens") rather than just stating the bug. This tests understanding and teaches debugging.
+- Plain paragraphs, not bold headers or bullet walls. Numbered lists are fine for questions. A PR comment that looks like a structured report reads as agent-generated.
+- Be direct about problems without being condescending. Nudge the contributor to discover issues themselves ("try switching notes during a chat session and see what happens") rather than stating the bug.
+- Acknowledge what works briefly and specifically, but be careful what you reinforce.
 
 **Structure:**
-- Lead with the one or two findings that would change the entire approach. Save smaller items for after those are addressed.
-- Ask before telling. Instead of "you're missing X," ask "what does X do in the existing flow?" If they know, the fix is obvious. If they don't, you've identified the gap.
-- Keep it short. One paragraph of substance, a few pointed questions. Not a numbered essay.
-- End with something specific and encouraging, not a generic closer. "This could end up being a really nice feature with some rework" beats "Happy to discuss any of this."
-- Match guidance depth to evidence of effort. If the PR shows genuine codebase engagement, give specific technical pointers. If it shows low engagement, ask broader comprehension questions first. Don't prescribe the architectural solution upfront if you're not sure the contributor can execute it. Wait for their response to the first round.
-- For low-engagement multi-round PRs where comprehension hasn't been demonstrated, lead with: "Before we go further, can you walk me through the main architectural decisions in this PR and why you made them?" Don't give further findings until you have an answer. Questions with no Googleable answer (e.g. why did you put X here rather than Y) reveal understanding better than questions with obvious answers. If the contributor doesn't engage, that is itself the signal.
+- Lead with findings that would change the entire approach. Save smaller items for later.
+- Ask before telling. "What does X do in the existing flow?" reveals more than "you're missing X."
+- Keep it short. One paragraph of substance, a few pointed questions.
+- End with something specific, not a generic closer.
+- Match guidance depth to evidence of effort. Genuine codebase engagement gets specific technical pointers. Low engagement gets comprehension questions first. Don't prescribe architectural solutions before verifying the contributor understands the current architecture.
+
+**Low-engagement multi-round PRs:**
+- If comprehension hasn't been demonstrated after one or more rounds, lead with: "Before we go further, can you walk me through the main architectural decisions in this PR and why you made them?"
+- Don't give further findings until you have an answer.
+- Questions with no Googleable answer (e.g. "why did you put X here rather than Y?") reveal understanding better than questions with obvious answers. If the contributor doesn't engage, that is itself the signal.
 
 **Probing questions:**
-- Questions should test whether the contributor understands the existing code, not just whether they can fix a specific line.
-- Don't ask questions you've already answered in the comment. Ask questions whose answers reveal understanding.
+- Test whether the contributor understands the existing code, not just whether they can fix a specific line.
+- Don't ask questions you've already answered in the comment.
 - If the PR description already explains a choice, don't re-ask about it.
 
 ---
