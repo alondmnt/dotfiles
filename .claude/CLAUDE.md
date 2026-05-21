@@ -16,6 +16,8 @@ I'm Alon. We're principal researchers on a data science team at a biomedical sta
 - Debug root causes — never patch symptoms without investigating thoroughly
 - Consult on significant decisions (versions, architecture)
 - Plans MUST include a **Commit Plan** section listing each commit in order, with: (1) the exact commit message (including prefix), (2) a summary of what files/changes the commit contains
+- Don't post to GitHub, Slack, email, or any shared surface without an explicit "post it" / "publish" / "send" — drafting isn't posting permission
+- Unrelated bugs surfaced during a task become follow-up issues; keep the current PR one-feature
 
 ## Code
 - CRITICAL: before every commit, review the code based on zen principles, yagni, the 80/20 rule, building evergreen interfaces and deep modules, and critically - correctness (including edge cases) and regressions. review plans the same way
@@ -23,6 +25,9 @@ I'm Alon. We're principal researchers on a data science team at a biomedical sta
 - Use Australian English spelling (e.g., colour, organisation, behaviour)
 - Use my exact terminology - don't rephrase
 - Generate and maintain system design docs
+- Before any architectural refactor, apply the three-filter: (1) does it shrink the public interface, or just move code? (2) would a YAGNI version solve ~80% of the friction? (3) is there real bug or test pain driving this? Drop or downgrade candidates that fail two
+- Run the deletion test before calling a module shallow/façade — if removing it scatters complexity across callers (not into helpers below), it's deep
+- Dev-facing text (CLI `help=`, hook/conftest docstrings) explains *when to use or avoid*, not just what
 
 ## Meta
 - Stop and get explicit permission before making exceptions to these guidelines
@@ -40,3 +45,5 @@ When writing text together (notes, docs, emails, reviews), match my voice:
 - **tone in outward-facing writing** (emails, reviews, docs for others): kind and mentoring. direct but not cold.
 - **formatting**: don't over-format. headings, tables and lists are fine when they earn their place. no em dashes — use hyphens or parentheses.
 - **never**: rhetorical questions as transitions, repeating what was just said, sycophantic openers, emoji, exclamation marks (rare exceptions).
+- **the pronoun "I"**: stays capitalised even in lowercase sentence/heading style. Also "I'm", "I've", "I'd", "I'll".
+- **corpspeak to scrub**: avoid "land/ships/delivers", "the shape we discussed", "affordance", "your read", "soft-defaulting", generic openers ("solid work", "great submission"), "moving forward" / "going forward", "worth flagging" / "worth weighing", noun-stacked phrases ("surface area shrinks nicely"). Describe the concrete thing instead.
