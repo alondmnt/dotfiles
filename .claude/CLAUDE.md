@@ -18,7 +18,7 @@ I'm Alon. We're principal researchers on a data science team at a biomedical sta
 - Plans MUST include a **Commit Plan** section listing each commit in order, with: (1) the exact commit message (including prefix), (2) a summary of what files/changes the commit contains
 
 ## Code
-- CRITICAL: YAGNI, 80/20, evergreen interfaces, zen principles
+- CRITICAL: before every commit, review the code based on zen principles, yagni, the 80/20 rule, building evergreen interfaces and deep modules, and critically - correctness (including edge cases) and regressions. review plans the same way
 - Always add docstrings; inline comments for non-trivial logic
 - Use Australian English spelling (e.g., colour, organisation, behaviour)
 - Use my exact terminology - don't rephrase
