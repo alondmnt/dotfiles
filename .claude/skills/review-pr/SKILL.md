@@ -108,6 +108,11 @@ When new code introduces significant complexity to work around a constraint, ask
 - Trace that constraint back to its source. Is the constraint inherent to the problem, or is it an architectural choice that could be revisited?
 - If removing the constraint would eliminate the complexity, flag the architecture, not just the implementation.
 
+**Concrete checks (apply when relevant):**
+
+- **Refactor three-filter:** (1) shrinks the public interface? (2) would a YAGNI version solve ~80% of the friction? (3) is there real bug or test pain driving it? Drop candidates failing two.
+- **Deletion test for "shallow/façade" claims:** if removed, does complexity sink into helpers below (keep digging), scatter across callers (label is wrong, module is deep), or need re-derivation (module owns real logic)?
+
 ### 5. Verify implicit contracts at system boundaries
 
 When code consumes something produced by a separate process — a trained model, a config file, a database schema, an API response, a data pipeline output — it relies on unspoken assumptions about what that thing contains. Each side looks correct in isolation. Bugs live at the seam, and silent degradation (column filtering, default values, fallback branches) means no error is raised.
@@ -146,6 +151,9 @@ Severity guidance:
 - **Blocker**: likely bug, data corruption, silent failure masking real problems, fabricated/hallucinated outputs, model using wrong inputs
 - **Important**: correctness edge-case, weakened tests/evals, missing coverage for core behaviour, parameter silently ignored, dead code that misleads
 - **Suggestion**: cleanup, stale references, minor inconsistency, nice-to-have tests
+
+### Follow-ups
+Unrelated bugs surfaced during review go here as one-paragraph drafts, not folded into the in-flight PR's findings. Keeps the PR one-feature.
 
 ### Where the human should look
 Explicitly list the 3-5 specific files/locations the human reviewer should read themselves, with a one-line reason for each. The reviewer's time is scarce — direct it to the highest-leverage spots.
