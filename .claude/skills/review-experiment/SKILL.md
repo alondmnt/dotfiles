@@ -1,6 +1,8 @@
 ---
 name: review-experiment
-description: Critically review research experiment artifacts against a supplied project process context. Use when asked to review, audit, stress-test, or red-team an iteration summary, experiment registry, findings document, sweep result, or reasoning chain; focuses on claim/evidence consistency, local process-contract compliance, statistical validity, implementation fidelity, and unresolved assumptions.
+description: Critically review a research experiment against a supplied project process context - its DESIGN before a sweep (a prereg or spec - bar, estimand, cohort, power/MDE, pre-committed gate) or its RESULTS after (an iteration summary, registry, findings document, sweep result, or reasoning chain), and re-derive decision-grade numbers from their source artifacts before they enter canonical memory (the propagation gate). Use to review, audit, stress-test, red-team, or recompute; focuses on design validity, claim/evidence consistency, local process-contract compliance, statistical validity, implementation fidelity, and unresolved assumptions. Run isolated - a fresh sub-agent that never saw the working transcript - for any decision-grade or memory-updating review.
+disable-model-invocation: true
+argument-hint: "[artifact-or-prereg-path]"
 ---
 
 # Review Experiment
@@ -17,8 +19,18 @@ not project-specific rules.
 - **Registry / end-of-experiment**: a registry, findings document, campaign memory, or
   closeout summary is in scope. Review the accumulated reasoning chain: drift,
   inconsistency, stale memory, and whether conclusions follow from evidence.
+- **Design / prereg (pre-sweep)**: a plan, prereg, or spec is in scope *before* the sweep or
+  screen runs. Review the design, not results — is the bar the right one, the estimand what
+  the author means to measure, the cohort one that generalises, the power/MDE honestly
+  stated, and the gate pre-committed and falsifiable? Reuses Lens 0 (Process Contract
+  Auditor) and Lens B (the Statistician); Lens A (the Saboteur) becomes "what would make a
+  positive result uninformative"; Lens C (Implementation Auditor) mostly does not apply
+  before results exist. Catches design errors a post-analysis review can only find after the
+  compute is spent (a hyperparameter-parity mismatch, an underpowered cohort, a bar that
+  can't measure the axis).
 
-If both are provided, start per-iteration, then extend to registry mode.
+Per-iteration and registry are post-analysis; design mode runs before either. If both
+post-analysis modes apply, start per-iteration, then extend to registry mode.
 
 ## Inputs
 
@@ -27,7 +39,13 @@ Accept, when available:
 - iteration summary path
 - process context path
 - registry, findings, or campaign-memory path
+- prereg / plan / spec path (design mode) — the spec to review before any result exists
 - referenced code or artifact paths
+
+**Pass the prereg/spec, not just the artefact.** In design mode the object under review is the
+plan itself; in post-analysis modes, the summary's declared bar/estimand/gate are only checkable
+against the spec they were committed to. A review handed only a produced artefact can confirm the
+number but not that it answers the question the design set out to answer.
 
 If the process context is missing, ask for it before doing a process-compliance review.
 If the user explicitly asks for an artifact-only review, proceed but mark all process
@@ -93,6 +111,11 @@ project assumptions from this skill:
 
 If the process context does not define one of these, report that as a process-contract
 gap rather than filling it from this skill.
+
+In design mode, also extract the **planned** bar, estimand, cohort, power/MDE, and the
+pre-committed gate from the spec, and check each against the process contract before any
+result exists — a design whose bar can't measure its own axis, or whose gate is not
+falsifiable, is the finding.
 
 ### Step 2 - Orient To The Artifact
 
