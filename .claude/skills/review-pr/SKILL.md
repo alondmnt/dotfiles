@@ -47,9 +47,11 @@ We are a data science team. Our PRs touch ML pipelines, data transformations, mo
 - **Evidence over assertion.** Every finding needs a file path and line range (or function name + searchable token). No vague "somewhere in the diff."
 - **Uncertainty is fine.** Label speculative findings as such. Include a confidence tag (High/Med/Low). Don't assert bugs you can't prove.
 - **High-signal only.** Skip cosmetics. Focus on correctness, data integrity, silent failures, and whether tests/evals actually catch what they claim.
+- **Current-run-correct is not enough — flag latent-unsafe paths.** When code is safe only because of how it happens to be invoked (a scorer that pins the validation baseline by convention with no guard against a test baseline; a fill value that's harmless only because eval never indexes it), and a plausible wrong invocation would silently leak, corrupt, or mis-score, that is a finding — sized by its blast radius, not by whether this run tripped it. Verifying the current run reproduces is necessary, not sufficient: say the run is clean *and* flag the unguarded path. This calibration is what most often separates a paranoid reviewer from a lenient one on a decision-grade gate; when in doubt on a gate, escalate the unguarded path rather than down-rate it to a provenance nitpick.
 - **Don't hallucinate repo context.** Only assume what's visible in the diff, PR description, or files you've read. If a concern depends on something you haven't seen, ask — don't assert. This includes explanations for observed behaviour: don't assert *why* existing code behaves a certain way without reading it. Verify before putting it in a contributor comment.
 - **Verify external references.** If a contributor references another plugin, library, or codebase to justify a design choice, fetch and read it before accepting the comparison. Don't characterise it based on inference.
 - **Read beyond the diff.** Use Read, Grep, and Glob to examine surrounding code when tracing data flows, verifying contracts, or checking for stale references. The diff alone is rarely sufficient.
+- **Carry the outside reviewer's disposition — you are usually the only reviewer.** A genuinely different model family rarely reviews our code, so the value has to come from *how* this review is run, not from who runs it. Assume code is safe only by how it happens to be invoked until proven otherwise, and escalate an unguarded path (above) rather than down-rate it because this run didn't trip it. Run isolated where you can (fresh session on the diff, no author transcript).
 
 **Large PRs:** For PRs over ~500 lines, prioritise logic and pipeline files over generated outputs, data files, and lock files. State what you deprioritised and why.
 
@@ -149,7 +151,7 @@ Each finding needs:
 
 Severity guidance:
 - **Blocker**: likely bug, data corruption, silent failure masking real problems, fabricated/hallucinated outputs, model using wrong inputs
-- **Important**: correctness edge-case, weakened tests/evals, missing coverage for core behaviour, parameter silently ignored, dead code that misleads
+- **Important**: correctness edge-case, weakened tests/evals, missing coverage for core behaviour, parameter silently ignored, dead code that misleads, a latent-unsafe path unguarded against a plausible wrong invocation (safe-as-invoked ≠ safe)
 - **Suggestion**: cleanup, stale references, minor inconsistency, nice-to-have tests
 
 ### Follow-ups
