@@ -87,6 +87,35 @@ Refine your findings using these to:
 - Distinguish pre-PR reports from post-PR reports in linked issues. **Pre-PR error reports are the motivation for the fix, not evidence against it.** Only post-PR reports are evidence of regressions introduced by this PR.
 - Revisit root-cause diagnoses: if the thread shows a proposed fix was already tried and failed, revise the diagnosis accordingly.
 
+**Step 5 — Refute your own findings:**
+
+An adversarial investigation raises the false-positive rate. That is the price of the posture,
+and the correction is to turn the same posture on your own output before it ships. Take each
+surviving finding and argue the other side: what would have to be true for this code to be
+correct as written? Then go and check whether it is.
+
+The refutations that land, roughly in order of how often they do:
+
+- the guard exists somewhere you didn't read - a caller, a decorator, config validation, a CI step
+- the input can't reach the state your failure scenario needs
+- the behaviour is deliberate and documented somewhere other than where you looked
+- you read a version of the file that isn't the pinned SHA
+- the test you called circular does reach the real producer, one layer further down
+
+Refute by reading the code you skipped the first time, not by re-reading your own reasoning.
+Reasoning that produced a finding will keep producing it.
+
+Then each finding takes one of three exits. Survived its refutation: ships, with the attempt
+recorded beside it ("checked the caller in `x.py:40-58`, no guard there") - that line is what
+makes the finding cheap for the human to trust. Refuted: does not ship, but the claim it came
+from goes into the ledger as verified, since a refuted finding is coverage, not waste.
+Neither confirmed nor refuted: ships downgraded and labelled with the check that would settle
+it, and never as a Blocker.
+
+This step matters most on a collaborator's PR. Ten findings with three wrong ones in them
+reads as gatekeeping, costs the author more time than it saves, and teaches them to discount
+the seven that were right.
+
 Then write the review output using the format below. Include the contributor engagement assessment. Do **not** draft a contributor-facing comment yet — wait for the reviewer to discuss findings and ask for one. See the "Contributor comment" section for guidelines when that time comes.
 
 **Review:**
@@ -198,6 +227,7 @@ Each finding needs:
 - **Title**: one line
 - **Evidence**: `path:line-range` or function name + searchable token
 - **Why it matters**: what breaks, what's silent, what's unverified
+- **Refutation attempted**: what you checked to try to kill this finding, and what you found
 - **Confidence**: High / Med / Low
 - **Recommendation**: what to do about it
 
