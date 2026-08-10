@@ -19,6 +19,11 @@ Then proceed with the review below.
 
 If no PR was specified, run `gh pr list --state open --limit 20` to list open PRs, then use AskUserQuestion to ask the user which PR to review (use PR numbers as option labels). Once selected, fetch context with the three commands above and proceed.
 
+**Pin the target.** Record the SHA you are reviewing and work from `git show <sha>` / `gh pr diff`
+rather than the working tree, which may be moving under you if the author is still committing. State the
+SHA in your output. If you must run the suite, note that a mutating tree makes the result
+uninterpretable — say so rather than reporting a number you cannot stand behind.
+
 **Step 2 — Analyse the diff and form findings:**
 
 Read the diff and any relevant surrounding files. Apply the review techniques below to produce a draft set of findings. Do **not** read PR comments or linked issue comments yet — reading them first anchors you to others' framing and weakens independent analysis.
