@@ -163,11 +163,13 @@ way you went and why - a review that only read should not sound like a review th
 
 When you do execute, work in a throwaway worktree, never in the reviewed repo's tree:
 
+Put it under your scratchpad directory if the session has one, otherwise a temp path:
+
 ```bash
 git fetch origin pull/<number>/head:pr-<number>
-git worktree add /tmp/review-pr-<number> <pinned-sha>
-# run, break, and read in /tmp/review-pr-<number>
-git worktree remove /tmp/review-pr-<number> --force
+git worktree add <scratchpad>/review-pr-<number> <pinned-sha>
+# run, break, and read in <scratchpad>/review-pr-<number>
+git worktree remove <scratchpad>/review-pr-<number> --force
 ```
 
 `gh pr diff` works on any repo, but the worktree needs a local clone. If the PR is on a repo
