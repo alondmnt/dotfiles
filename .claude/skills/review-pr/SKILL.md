@@ -104,7 +104,59 @@ Apply these as relevant — not every PR needs all of them.
 - **Ask "where does X go?"** For each new artifact the PR introduces, check who consumes it, through what path, and whether the consumer resolves it. Watch for parallel pipelines doing similar things independently.
 - **Check dependency and environment assumptions.** Code that loads models or imports optional packages often fails silently when the environment doesn't match. Search for `try/except ImportError` and check whether new dependencies are in the right group (required vs optional).
 
-### 4. Question complexity that compensates for wrong architecture
+### 4. Ask whether the change is COMPLETE, not just correct
+
+The techniques above ask "is this code right?" This one asks "is this all of it?" Incompleteness is
+harder to see than incorrectness, because every line in the diff can be correct while the set of lines
+is wrong. Review naturally anchors on what the author touched; this is the deliberate correction.
+
+**Example from practice:** A PR made leaderboard latest-row selection Track-aware, changing
+`PARTITION BY atomic_unit_id` to include the Track. It changed two sites and its commit message said
+"both surfaces that compute it". `grep -rn "PARTITION BY atomic_unit_id"` found **four** — two more in
+`databricks/sql/*.sql`, live files a reviewer pastes straight into a warehouse. Worse, an existing test
+asserted the OLD partition key and still passed, so the repo held two tests making contradictory claims
+about one concept. That green assertion is exactly why nobody noticed.
+
+**How to do it:**
+
+- **Grep for the concept, not the file.** Take each identifier, column name, flag, or rule the PR
+  changes and search the whole repo for its OLD form — across `.py`, `.sql`, `.json`, `.md`, `.ts`,
+  dashboards, fixtures. The author saw the sites in their language; the misses are usually in another.
+- **Hunt the green test that pins the old behaviour.** After any behaviour change, grep the test suite
+  for the superseded form. A test asserting the old contract that still passes is near-proof the change
+  is partial, and it will keep the gap invisible indefinitely. Two tests asserting incompatible things
+  about one concept is always a finding.
+- **Treat docs as callers.** A changed CLI flag, function signature, or required argument breaks every
+  runbook, README and walkthrough that tells a human to invoke the old way. These fail at *runtime for a
+  person*, not at import for a machine, so no test catches them. Grep docs for the command or symbol.
+  In the example above, two documented invocations began exiting 1 and neither was updated.
+- **Ask what else derives the same thing.** If the PR changes one derivation of a value, find the
+  others. Duplicated derivations are the normal case in mature code, not the exception.
+
+### 5. Check whether a test can actually fail
+
+A test that cannot fail is worse than no test: it occupies the space where a real check would go and
+reports green forever.
+
+**Examples from practice:** (1) A conformance test asserted that four MLflow tags were present — but its
+own helper had reimplemented those tag emissions rather than calling the producer, so the assertions
+checked the fixture against itself. Deleting the real emission left the suite green. (2) A test compared
+shared columns across two surfaces and silently skipped any that were blank on both; it compared 32 of
+51 and reported success.
+
+**How to do it:**
+
+- **Trace each assertion back to what produced the value.** If the test's own setup produced it, the
+  test is circular. Fixtures should stand in for *inputs*, never for the behaviour under test.
+- **Look for silent skips.** Any `continue`, `if x not in y`, or filter inside a test loop is coverage
+  quietly disappearing. The test should assert what it actually covered, not just that what it covered
+  passed.
+- **Break it on purpose.** The strongest verification is to introduce the defect the test claims to
+  catch and confirm it fails. Prefer editing the real source on disk, running, then restoring, over
+  monkeypatching: `from X import Y` binds into the importing module, so patching the source module's
+  attribute leaves the test's binding untouched and makes a working guard look broken.
+
+### 6. Question complexity that compensates for wrong architecture
 
 When new code introduces significant complexity to work around a constraint, ask whether the constraint itself should exist. The simplest fix is often to remove the constraint, not engineer around it.
 
@@ -120,7 +172,7 @@ When new code introduces significant complexity to work around a constraint, ask
 - **Refactor three-filter:** (1) shrinks the public interface? (2) would a YAGNI version solve ~80% of the friction? (3) is there real bug or test pain driving it? Drop candidates failing two.
 - **Deletion test for "shallow/façade" claims:** if removed, does complexity sink into helpers below (keep digging), scatter across callers (label is wrong, module is deep), or need re-derivation (module owns real logic)?
 
-### 5. Verify implicit contracts at system boundaries
+### 7. Verify implicit contracts at system boundaries
 
 When code consumes something produced by a separate process — a trained model, a config file, a database schema, an API response, a data pipeline output — it relies on unspoken assumptions about what that thing contains. Each side looks correct in isolation. Bugs live at the seam, and silent degradation (column filtering, default values, fallback branches) means no error is raised.
 
