@@ -21,7 +21,7 @@ If no PR was specified, run `gh pr list --state open --limit 20` to list open PR
 
 **Pin the target.** Record the SHA you are reviewing and work from `git show <sha>` / `gh pr diff`
 rather than the working tree, which may be moving under you if the author is still committing. State the
-SHA in your output. Everything you run runs against that SHA in a worktree (see "Execution
+SHA in your output. Anything you execute runs against that SHA in a worktree (see "Execution
 sandbox"); a number taken from a tree that moved under you is uninterpretable and should be
 reported as such rather than quoted.
 
@@ -169,6 +169,11 @@ git worktree add /tmp/review-pr-<number> <pinned-sha>
 # run, break, and read in /tmp/review-pr-<number>
 git worktree remove /tmp/review-pr-<number> --force
 ```
+
+`gh pr diff` works on any repo, but the worktree needs a local clone. If the PR is on a repo
+you don't have, either `gh repo clone` it first or say plainly that the review was
+read-only because the code wasn't available to run - don't quietly drop to reading and
+report as though you had run.
 
 Three rules:
 
