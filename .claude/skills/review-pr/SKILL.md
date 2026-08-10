@@ -24,11 +24,58 @@ rather than the working tree, which may be moving under you if the author is sti
 SHA in your output. If you must run the suite, note that a mutating tree makes the result
 uninterpretable — say so rather than reporting a number you cannot stand behind.
 
-**Step 2 — Analyse the diff and form findings:**
+**Step 2 — Enumerate what the PR claims:**
 
-Read the diff and any relevant surrounding files. Apply the techniques in `references/review_techniques.md` to produce a draft set of findings. Do **not** read PR comments or linked issue comments yet — reading them first anchors you to others' framing and weakens independent analysis.
+Before hunting for smells, write down what the diff asserts without saying so. A PR is a set
+of implicit claims: this flag reaches the trainer, this test fails if the guard is removed,
+this scorer is deterministic, this migration touched every site, this column exists upstream.
+Most of them are true. The review is the attempt to find the one that isn't.
 
-**Step 3 — Fetch comments and refine:**
+Build the list from the diff alone, before you have a theory about what's wrong. A list
+written after the hypothesis only contains claims the hypothesis already covers. Keep it to
+the load-bearing ones (roughly 5-15 on a normal PR) and rank them by what breaks if the claim
+is false.
+
+By the end of the review every claim carries one of three dispositions: **falsified** (that's
+a finding), **verified** (say how, and prefer a check you ran over a passage you read), or
+**unverified** (name the check that would settle it). An unchecked load-bearing claim is
+itself a finding - a review that leaves the riskiest claim untested hasn't covered the PR,
+however many findings it returns.
+
+**Step 3 — Work the four lenses:**
+
+Read the diff and the surrounding code, applying the techniques in
+`references/review_techniques.md`, then put the claim list through four lenses. Each lens
+must report. A lens with nothing to say is usually a lens that wasn't run.
+
+- **Lens 0 — process contract.** Does the change obey the repo's own rules: `CLAUDE.md`,
+  the conventions the surrounding code already follows, one-feature commits, docs kept in
+  step with the interfaces they document, the issues it claims to close actually closed?
+- **Lens A — the saboteur.** What makes this green for the wrong reason? Take each passing
+  test, each clean run, each plausible number, and try to produce a mundane explanation that
+  isn't the mechanism the author intends: a fixture standing in for the behaviour, a filter
+  that silently drops the failing rows, a default that masks the missing value.
+- **Lens B — the statistician.** For any number the PR produces, moves, or relies on: does
+  the claim say more than the estimate, interval, sample size, or seed spread supports? Is
+  the comparator the right one? Would the number survive a rerun?
+- **Lens C — the implementation auditor.** Does the code do what the PR description, the
+  commit messages, and the docstrings say it does? Where they disagree, the code is the
+  ground truth and the mismatch is the finding.
+
+Three rules make the roster adversarial rather than decorative:
+
+- **No empty lens.** If a lens finds no defect, state the single strongest assumption it is
+  leaning on and why that assumption is plausible. Don't manufacture cosmetics to fill a
+  quota - an honest assumption is more useful to the human than a nitpick.
+- **Independent detection promotes.** When two lenses reach the same finding by different
+  routes, raise it one severity level. Overlap isn't intended, so it's evidence.
+- **Break the self-review trap.** If a lens comes up empty, read the relevant code bottom-up,
+  state each function's contract before reading its body, and assume every external input
+  could be malformed and every artifact load could silently return the wrong thing.
+
+Do **not** read PR comments or linked issue comments during Steps 2 and 3 — reading them first anchors you to others' framing and weakens independent analysis.
+
+**Step 4 — Fetch comments and refine:**
 
 Run in parallel:
 - `gh pr view <number> --comments`
@@ -56,9 +103,25 @@ We are a data science team. Our PRs touch ML pipelines, data transformations, mo
 - **Don't hallucinate repo context.** Only assume what's visible in the diff, PR description, or files you've read. If a concern depends on something you haven't seen, ask — don't assert. This includes explanations for observed behaviour: don't assert *why* existing code behaves a certain way without reading it. Verify before putting it in a contributor comment.
 - **Verify external references.** If a contributor references another plugin, library, or codebase to justify a design choice, fetch and read it before accepting the comparison. Don't characterise it based on inference.
 - **Read beyond the diff.** Use Read, Grep, and Glob to examine surrounding code when tracing data flows, verifying contracts, or checking for stale references. The diff alone is rarely sufficient.
-- **Carry the outside reviewer's disposition — you are usually the only reviewer.** A genuinely different model family rarely reviews our code, so the value has to come from *how* this review is run, not from who runs it. Assume code is safe only by how it happens to be invoked until proven otherwise, and escalate an unguarded path (above) rather than down-rate it because this run didn't trip it. Run isolated where you can (fresh session on the diff, no author transcript).
+- **Carry the outside reviewer's disposition — you are usually the only reviewer.** A genuinely different model family rarely reviews our code, so the value has to come from *how* this review is run, not from who runs it. Assume code is safe only by how it happens to be invoked until proven otherwise, and escalate an unguarded path (above) rather than down-rate it because this run didn't trip it. Run isolated (see below).
 
 **Large PRs:** For PRs over ~500 lines, prioritise logic and pipeline files over generated outputs, data files, and lock files. State what you deprioritised and why.
+
+## Review isolation
+
+Run the review in a fresh session or sub-agent that never saw the author's working
+transcript. Isolate by default when any of these hold: you helped write or plan the change;
+the PR is merge-gating or decision-grade; the change reverses prior project memory; the
+review turns on subtle provenance or artifact consistency.
+
+Pass the isolated reviewer raw inputs only - PR number, pinned SHA, repo path, and any
+explicitly relevant file paths. Do **not** pass suspected bugs, expected findings, prior
+conclusions, or your own private reasoning. A reviewer seeded with your hypothesis returns
+confirmation, not a second opinion, and it will read as agreement.
+
+Reviewing in the main session is fine for a quick triage pass. When you do, say so in the
+output and name the inherited context as a residual risk rather than leaving the reader to
+assume the review was independent.
 
 ---
 
@@ -83,7 +146,12 @@ that makes it recognisable. Read that file before forming findings.
 Adapt the format to the PR. Don't force rigid sections when they add no value. The core deliverables are:
 
 ### Orientation
-What this PR does, why, and what it touches. Keep it short — the reviewer should understand scope in 30 seconds.
+What this PR does, why, and what it touches. Keep it short — the reviewer should understand scope in 30 seconds. State the pinned SHA, and whether the review ran isolated or in the main session.
+
+### Claim ledger
+The load-bearing claims from Step 2, each marked falsified / verified / unverified. One line
+each. This is the coverage statement for the review: it tells the human what was actually
+tested, which a findings list on its own never does.
 
 ### Change map
 A table grouping changes by area, with risk level (Low / Medium / High) and a one-line "why risky" for anything Medium or High.
@@ -101,6 +169,13 @@ Severity guidance:
 - **Blocker**: likely bug, data corruption, silent failure masking real problems, fabricated/hallucinated outputs, model using wrong inputs
 - **Important**: correctness edge-case, weakened tests/evals, missing coverage for core behaviour, parameter silently ignored, dead code that misleads, a latent-unsafe path unguarded against a plausible wrong invocation (safe-as-invoked ≠ safe)
 - **Suggestion**: cleanup, stale references, minor inconsistency, nice-to-have tests
+
+Note the promotion when two lenses reached a finding independently, and say which two.
+
+### Assumptions surfaced
+For each lens that returned no defect, the strongest assumption it was leaning on. These are
+the review's blind spots stated out loud, and they are often more useful to the human than a
+third Suggestion.
 
 ### Follow-ups
 Unrelated bugs surfaced during review go here as one-paragraph drafts, not folded into the in-flight PR's findings. Keeps the PR one-feature.
