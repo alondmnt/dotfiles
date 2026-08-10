@@ -3,7 +3,7 @@ name: review-pr
 description: Review a GitHub pull request for defects, data integrity issues, and silent failures
 disable-model-invocation: true
 argument-hint: "[pr-number-or-url]"
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash(gh *, git worktree *, git fetch *, git show *, git diff *, git log *, git grep *, git status *, git rev-parse *, python *, pytest *), AskUserQuestion
+allowed-tools: Read, Grep, Glob, Edit, Write, AskUserQuestion, Bash(gh:*), Bash(git worktree:*), Bash(git fetch:*), Bash(git show:*), Bash(git diff:*), Bash(git log:*), Bash(git grep:*), Bash(git status:*), Bash(git rev-parse:*), Bash(python:*), Bash(python3:*), Bash(pytest:*)
 ---
 
 ## Instructions
