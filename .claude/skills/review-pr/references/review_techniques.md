@@ -91,9 +91,8 @@ shared columns across two surfaces and silently skipped any that were blank on b
   quietly disappearing. The test should assert what it actually covered, not just that what it covered
   passed.
 - **Break it on purpose.** The strongest verification is to introduce the defect the test claims to
-  catch and confirm it fails. Prefer editing the real source on disk, running, then restoring, over
-  monkeypatching: `from X import Y` binds into the importing module, so patching the source module's
-  attribute leaves the test's binding untouched and makes a working guard look broken.
+  catch and confirm it fails. Do it in the throwaway worktree - see "Execution sandbox" in `SKILL.md`
+  for the protocol and for why editing the real source beats monkeypatching.
 
 ### 6. Question complexity that compensates for wrong architecture
 

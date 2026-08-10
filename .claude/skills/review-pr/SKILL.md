@@ -3,7 +3,7 @@ name: review-pr
 description: Review a GitHub pull request for defects, data integrity issues, and silent failures
 disable-model-invocation: true
 argument-hint: "[pr-number-or-url]"
-allowed-tools: Read, Grep, Glob, Bash(gh *, python -c *), AskUserQuestion
+allowed-tools: Read, Grep, Glob, Edit, Write, Bash(gh *, git worktree *, git fetch *, git show *, git diff *, git log *, git grep *, git status *, git rev-parse *, python *, pytest *), AskUserQuestion
 ---
 
 ## Instructions
@@ -21,8 +21,9 @@ If no PR was specified, run `gh pr list --state open --limit 20` to list open PR
 
 **Pin the target.** Record the SHA you are reviewing and work from `git show <sha>` / `gh pr diff`
 rather than the working tree, which may be moving under you if the author is still committing. State the
-SHA in your output. If you must run the suite, note that a mutating tree makes the result
-uninterpretable — say so rather than reporting a number you cannot stand behind.
+SHA in your output. Everything you run runs against that SHA in a worktree (see "Execution
+sandbox"); a number taken from a tree that moved under you is uninterpretable and should be
+reported as such rather than quoted.
 
 **Step 2 — Enumerate what the PR claims:**
 
@@ -122,6 +123,41 @@ confirmation, not a second opinion, and it will read as agreement.
 Reviewing in the main session is fine for a quick triage pass. When you do, say so in the
 output and name the inherited context as a residual risk rather than leaving the reader to
 assume the review was independent.
+
+## Execution sandbox
+
+The adversarial stance above is free and applies to every PR. Executing costs time and a
+checkout, so spend it where being wrong is expensive: merge-gating PRs, changes to scoring,
+eval or data paths, anything whose output feeds a published number, and any PR where a Step 2
+claim cannot be settled by reading. A small refactor with green CI doesn't need it. Say which
+way you went and why - a review that only read should not sound like a review that ran.
+
+When you do execute, work in a throwaway worktree, never in the reviewed repo's tree:
+
+```bash
+git fetch origin pull/<number>/head:pr-<number>
+git worktree add /tmp/review-pr-<number> <pinned-sha>
+# run, break, and read in /tmp/review-pr-<number>
+git worktree remove /tmp/review-pr-<number> --force
+```
+
+Three rules:
+
+- **Never mutate the reviewed working tree.** The author may still be committing into it, and
+  a review that leaves a dirty tree behind costs more than it found.
+- **Report what you ran, verbatim, with its result.** A quoted pass or failure is worth more
+  than any amount of reasoning about what a test probably does. If you only read it, say you
+  read it.
+- **Don't commit, push, or post from the sandbox.** It is for reading and breaking. Fixes and
+  comments go to the author, and posting anywhere needs an explicit instruction first.
+
+**Defect injection** is the strongest verification available: introduce the bug a test claims
+to catch, and confirm the test fails. The sandbox is what makes it safe - edit the real
+source, run, then discard the whole worktree rather than restoring by hand. Prefer editing
+source over monkeypatching: `from X import Y` binds into the importing module, so patching the
+source module's attribute leaves the test's binding untouched and makes a working guard look
+broken. A test that still passes with the defect in place is a Blocker, not a Suggestion - it
+is occupying the space where a real check would go.
 
 ---
 
