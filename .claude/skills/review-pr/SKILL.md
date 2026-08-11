@@ -1,29 +1,85 @@
 ---
 name: review-pr
-description: Review a GitHub pull request for defects, data integrity issues, and silent failures
-disable-model-invocation: true
-argument-hint: "[pr-number-or-url]"
-allowed-tools: Read, Grep, Glob, Bash(gh *, python -c *), AskUserQuestion
+description: Review a GitHub pull request or base-to-head change set for actionable defects, data integrity issues, silent failures, incomplete migrations, and tests that can pass for the wrong reason. Use when asked to review, audit, red-team, or verify a PR or branch before merge.
 ---
 
 ## Instructions
 
 **Step 1 — Fetch PR context:**
 
-Check whether the user provided a PR number or URL after `/review-pr`. If yes, run these commands to fetch context (they are independent — run them in parallel):
-- `gh pr view <number>`
-- `gh pr diff <number> --name-only`
-- `gh pr diff <number>`
+Check whether the user provided a PR number or URL. If yes, use the available GitHub
+integration or the `gh` CLI to fetch PR metadata first, including the immutable endpoints:
 
-Then proceed with the review below.
+- `gh pr view <number> --json number,title,body,url,baseRefName,headRefName,baseRefOid,headRefOid`
 
-If no PR was specified, run `gh pr list --state open --limit 20` to list open PRs, then use AskUserQuestion to ask the user which PR to review (use PR numbers as option labels). Once selected, fetch context with the three commands above and proceed.
+Then fetch the named files and patch for that base/head pair. In a local clone, use
+`git diff --name-only <base-sha>...<head-sha>` and `git diff <base-sha>...<head-sha>`.
+Without a local clone, use a GitHub comparison addressed by those SHAs or clone the
+repository. Do not use a moving `gh pr diff` as though it were pinned.
 
-**Step 2 — Analyse the diff and form findings:**
+If no PR was specified, list open PRs and ask the user which one to review. Once selected,
+fetch the same context and proceed.
 
-Read the diff and any relevant surrounding files. Apply the review techniques below to produce a draft set of findings. Do **not** read PR comments or linked issue comments yet — reading them first anchors you to others' framing and weakens independent analysis.
+**Pin both ends of the diff.** Record the base SHA and head SHA from the PR metadata. Read
+from `git show <head-sha>` and compare `git diff <base-sha>...<head-sha>` rather than using
+the working tree or a later live diff. State both SHAs in the output. Anything executed must
+run against the pinned head in a throwaway checkout. Before finalising, fetch the PR metadata
+again. If either endpoint moved, restart on the new pair or clearly report that the review
+covers the old pair. A result from an unpinned or moving tree is uninterpretable.
 
-**Step 3 — Fetch comments and refine:**
+**Step 2 — Enumerate what the PR claims:**
+
+Before hunting for smells, write down what the diff asserts without saying so. A PR is a set
+of implicit claims: this flag reaches the trainer, this test fails if the guard is removed,
+this scorer is deterministic, this migration touched every site, this column exists upstream.
+Most of them are true. The review is the attempt to find the one that isn't.
+
+Build the list from the diff alone, before you have a theory about what's wrong. A list
+written after the hypothesis only contains claims the hypothesis already covers. Keep it to
+the load-bearing ones (roughly 5-15 on a normal PR) and rank them by what breaks if the claim
+is false.
+
+By the end of the review every claim carries one of three dispositions: **falsified** (that's
+a finding), **verified** (say how, and prefer a check you ran over a passage you read), or
+**unverified** (name the check that would settle it). An unchecked load-bearing claim is
+itself a finding - a review that leaves the riskiest claim untested hasn't covered the PR,
+however many findings it returns.
+
+**Step 3 — Work the four lenses:**
+
+Read the diff and the surrounding code, applying the techniques in
+`references/review_techniques.md`, then put the claim list through four lenses. Each lens
+must report. A lens with nothing to say is usually a lens that wasn't run.
+
+- **Lens 0 — process contract.** Does the change obey the repo's own rules: `CLAUDE.md`,
+  the conventions the surrounding code already follows, one-feature commits, docs kept in
+  step with the interfaces they document, the issues it claims to close actually closed?
+- **Lens A — the saboteur.** What makes this green for the wrong reason? Take each passing
+  test, each clean run, each plausible number, and try to produce a mundane explanation that
+  isn't the mechanism the author intends: a fixture standing in for the behaviour, a filter
+  that silently drops the failing rows, a default that masks the missing value.
+- **Lens B — the statistician.** For any number the PR produces, moves, or relies on: does
+  the claim say more than the estimate, interval, sample size, or seed spread supports? Is
+  the comparator the right one? Would the number survive a rerun?
+- **Lens C — the implementation auditor.** Does the code do what the PR description, the
+  commit messages, and the docstrings say it does? Where they disagree, the code is the
+  ground truth and the mismatch is the finding.
+
+Three rules make the roster adversarial rather than decorative:
+
+- **No empty lens.** If a lens finds no defect, state the single strongest assumption it is
+  leaning on and why that assumption is plausible. Don't manufacture cosmetics to fill a
+  quota - an honest assumption is more useful to the human than a nitpick.
+- **Independent detection raises confidence, not severity.** When two lenses reach the same
+  finding by different routes, record the agreement and raise confidence if warranted.
+  Severity still follows consequence and likelihood; lens overlap alone never promotes it.
+- **Break the self-review trap.** If a lens comes up empty, read the relevant code bottom-up,
+  state each function's contract before reading its body, and assume every external input
+  could be malformed and every artifact load could silently return the wrong thing.
+
+Do **not** read PR comments or linked issue comments during Steps 2 and 3 — reading them first anchors you to others' framing and weakens independent analysis.
+
+**Step 4 — Fetch comments and refine:**
 
 Run in parallel:
 - `gh pr view <number> --comments`
@@ -31,8 +87,39 @@ Run in parallel:
 
 Refine your findings using these to:
 - Retract or downgrade findings already resolved in prior review rounds
+- Treat a claimed resolution as in scope only when its fix exists in the pinned head. A
+  comment about a later commit does not resolve a finding against the reviewed pair.
 - Distinguish pre-PR reports from post-PR reports in linked issues. **Pre-PR error reports are the motivation for the fix, not evidence against it.** Only post-PR reports are evidence of regressions introduced by this PR.
 - Revisit root-cause diagnoses: if the thread shows a proposed fix was already tried and failed, revise the diagnosis accordingly.
+
+**Step 5 — Refute your own findings:**
+
+An adversarial investigation raises the false-positive rate. That is the price of the posture,
+and the correction is to turn the same posture on your own output before it ships. Take each
+surviving finding and argue the other side: what would have to be true for this code to be
+correct as written? Then go and check whether it is.
+
+The refutations that land, roughly in order of how often they do:
+
+- the guard exists somewhere you didn't read - a caller, a decorator, config validation, a CI step
+- the input can't reach the state your failure scenario needs
+- the behaviour is deliberate and documented somewhere other than where you looked
+- you read a version of the file outside the pinned base/head pair
+- the test you called circular does reach the real producer, one layer further down
+
+Refute by reading the code you skipped the first time, not by re-reading your own reasoning.
+Reasoning that produced a finding will keep producing it.
+
+Then each finding takes one of three exits. Survived its refutation: ships, with the attempt
+recorded beside it ("checked the caller in `x.py:40-58`, no guard there") - that line is what
+makes the finding cheap for the human to trust. Refuted: does not ship, but the claim it came
+from goes into the ledger as verified, since a refuted finding is coverage, not waste.
+Neither confirmed nor refuted: ships downgraded and labelled with the check that would settle
+it, and never as a Blocker.
+
+This step matters most on a collaborator's PR. Ten findings with three wrong ones in them
+reads as gatekeeping, costs the author more time than it saves, and teaches them to discount
+the seven that were right.
 
 Then write the review output using the format below. Include the contributor engagement assessment. Do **not** draft a contributor-facing comment yet — wait for the reviewer to discuss findings and ask for one. See the "Contributor comment" section for guidelines when that time comes.
 
@@ -51,82 +138,125 @@ We are a data science team. Our PRs touch ML pipelines, data transformations, mo
 - **Don't hallucinate repo context.** Only assume what's visible in the diff, PR description, or files you've read. If a concern depends on something you haven't seen, ask — don't assert. This includes explanations for observed behaviour: don't assert *why* existing code behaves a certain way without reading it. Verify before putting it in a contributor comment.
 - **Verify external references.** If a contributor references another plugin, library, or codebase to justify a design choice, fetch and read it before accepting the comparison. Don't characterise it based on inference.
 - **Read beyond the diff.** Use Read, Grep, and Glob to examine surrounding code when tracing data flows, verifying contracts, or checking for stale references. The diff alone is rarely sufficient.
-- **Carry the outside reviewer's disposition — you are usually the only reviewer.** A genuinely different model family rarely reviews our code, so the value has to come from *how* this review is run, not from who runs it. Assume code is safe only by how it happens to be invoked until proven otherwise, and escalate an unguarded path (above) rather than down-rate it because this run didn't trip it. Run isolated where you can (fresh session on the diff, no author transcript).
+- **Carry the outside reviewer's disposition — you are usually the only reviewer.** A genuinely different model family rarely reviews our code, so the value has to come from *how* this review is run, not from who runs it. Assume code is safe only by how it happens to be invoked until proven otherwise, and escalate an unguarded path (above) rather than down-rate it because this run didn't trip it. Run isolated (see below).
 
 **Large PRs:** For PRs over ~500 lines, prioritise logic and pipeline files over generated outputs, data files, and lock files. State what you deprioritised and why.
 
+## Review isolation
+
+Run the review in a fresh session or sub-agent that never saw the author's working
+transcript. Isolate by default when any of these hold: you helped write or plan the change;
+the PR is merge-gating or decision-grade; the change reverses prior project memory; the
+review turns on subtle provenance or artifact consistency.
+
+Pass the isolated reviewer raw inputs only - PR number, base SHA, head SHA, repo path, and any
+explicitly relevant file paths. Do **not** pass suspected bugs, expected findings, prior
+conclusions, or your own private reasoning. A reviewer seeded with your hypothesis returns
+confirmation, not a second opinion, and it will read as agreement.
+
+Reviewing in the main session is fine for a quick triage pass. When you do, say so in the
+output and name the inherited context as a residual risk rather than leaving the reader to
+assume the review was independent.
+
+## Evidence modes
+
+Use the least expensive mode that can settle each load-bearing claim, and state which modes
+the review used:
+
+1. **Source inspection**: read the pinned diff, surrounding code, tests, configuration, and
+   repository process rules. Every review uses this mode.
+2. **External evidence inspection**: inspect persisted data or run evidence when a PR claim
+   depends on something outside the repository. This is distinct from running PR code.
+3. **PR-code execution**: run tests, reproducers, or defect injection in a throwaway checkout
+   when reading and persisted evidence cannot settle a consequential claim.
+
+### External research evidence
+
+Treat external systems generically. Evidence may live in object storage such as S3, GCS, or
+Azure Blob; a data platform or catalogue such as Databricks or Unity Catalog; an experiment
+tracker such as MLflow or Weights & Biases; a model registry; or a database, job service,
+log system, or API.
+
+Use a trusted read-only interface and the narrowest identity available. Start with the
+smallest check that can settle the claim: metadata, schema, counts, stable identifiers,
+completion state, or a few representative records. Download or recompute only when those
+checks are insufficient. Record stable provenance such as the URI, table or model version,
+run ID, workspace or region, object version, ETag, checksum, snapshot, or observation time.
+A local cache or export is not authoritative unless it is tied back to the persisted source.
+
+Never mutate external state as part of a review. Do not publish artifacts, alter tags or
+aliases, rerun jobs, promote models, or expose credentials or sensitive records. If access
+is unavailable or the identity of the artifact cannot be established, mark the claim
+`unverified` and name the exact read-only check that would settle it.
+
+## Throwaway execution checkout
+
+The adversarial stance above is free and applies to every PR. Executing costs time and a
+checkout, so spend it where being wrong is expensive: merge-gating PRs, changes to scoring,
+eval or data paths, anything whose output feeds a published number, and any PR where a Step 2
+claim cannot be settled by reading. A small refactor with green CI doesn't need it. Say which
+way you went and why - a review that only read should not sound like a review that ran.
+
+When you execute PR code, use a throwaway worktree, never the reviewed repository's active
+working tree:
+
+Put it under your scratchpad directory if the session has one, otherwise a temp path:
+
+```bash
+git fetch origin pull/<number>/head
+git worktree add --detach <temporary-path>/review-pr-<number> <head-sha>
+# run, break, and read in <temporary-path>/review-pr-<number>
+git worktree remove <temporary-path>/review-pr-<number> --force
+```
+
+A worktree makes source mutations disposable; it is not a process-security boundary. It
+shares the host, credentials, network, and Git object store. Treat code, tests, build hooks,
+and dependency installers from the PR as untrusted. Run them only inside the host's real
+execution boundary, such as its sandbox, container, or disposable VM, with credentials
+removed and network disabled unless the check requires it. If that boundary is unavailable
+or execution needs new authority, request approval or leave the claim unverified. Never
+imply that a worktree alone made arbitrary PR code safe to execute.
+
+`gh pr diff` works on any repo, but the worktree needs a local clone. If the PR is on a repo
+you don't have, either `gh repo clone` it first or say plainly that the review was
+read-only because the code wasn't available to run - don't quietly drop to reading and
+report as though you had run.
+
+Three rules:
+
+- **Never mutate the reviewed working tree.** The author may still be committing into it, and
+  a review that leaves a dirty tree behind costs more than it found.
+- **Report reproducible commands and their results.** Redact credentials, signed URLs, and
+  sensitive arguments. A concrete pass or failure is worth more than reasoning about what a
+  test probably does. If you only read it, say you read it.
+- **Don't commit, push, or post from the throwaway checkout.** It is for reading and breaking. Fixes and
+  comments go to the author, and posting anywhere needs an explicit instruction first.
+
+**Defect injection** is the strongest verification available: introduce the bug a test claims
+to catch, and confirm the test fails. The throwaway checkout makes the source edit disposable;
+execution safety still comes from the boundary above. Edit the real source, run, then discard
+the whole worktree rather than restoring by hand. Prefer editing
+source over monkeypatching: `from X import Y` binds into the importing module, so patching the
+source module's attribute leaves the test's binding untouched and makes a working guard look
+broken. A test that still passes with the defect in place is a finding. Size its severity by
+the consequence of the behaviour the test claims to protect; it is a Blocker only when the
+unprotected defect is itself merge-gating.
+
 ---
 
-## Review techniques (ranked by value, from practice)
+## Review techniques
 
-These techniques apply broadly and are illustrated with real-world examples.
+Seven techniques, ranked by value from practice, live in
+[`references/review_techniques.md`](references/review_techniques.md), each with the example
+that makes it recognisable. Read that file before forming findings.
 
-### 1. Question the premise — does this need to be built?
-
-Before diving into implementation, ask two questions in order:
-
-1. **Is this already solved externally?** Is there a well-maintained library, platform feature, or managed service that handles this problem? A correct, well-tested custom implementation of a solved problem is still a net negative — you inherit the maintenance burden, miss upstream improvements, and risk subtle divergence from battle-tested behaviour.
-
-2. **Does this already exist internally?** Does the feature duplicate functionality already in the system, host platform, or upstream dependency?
-
-If either answer is yes, the burden of proof shifts to the PR author to justify the custom path. Valid justifications exist (performance constraints, domain-specific requirements, licensing, avoiding a heavy dependency for a thin slice of functionality) — but they should be stated, not assumed.
-
-**Example from practice:** A plugin PR added Ctrl+click on tags to open the host app's native tag view. The implementation was complex (DB lookup → N+1 API calls → undocumented command), but it was functionally identical to clicking the same tag in the host app's built-in sidebar. The entire code review became moot once the duplication was identified.
-
-**How to do it:**
-- State in one sentence what the feature gives the user or what problem the code solves
-- Ask: can the user already achieve this through an existing internal or external path?
-- Watch for PRs that bundle a genuinely new behaviour change alongside a redundant feature
-
-### 2. Trace the data flow end-to-end
-
-The highest-value bugs come from following a value from its entry point to its final use. Don't just read each file in isolation — trace the chain.
-
-**Example from practice:** Serialised model files existed on disk, but a missing optional dependency caused `joblib.load()` to fail silently. The code caught the exception, returned `null` predictions, and a downstream LLM fabricated plausible-looking values to fill the gap. Found by asking "why is this null?" and following the chain: file exists → load fails → silent catch → null output → hallucinated report values.
-
-**How to do it:**
-- Pick a parameter, config value, or data artifact introduced in the PR
-- Follow it from where it enters the system to where it's consumed
-- Check: is it actually forwarded? Is it silently dropped? Is the error path swallowing information?
-
-### 3. Additional checks
-
-Apply these as relevant — not every PR needs all of them.
-
-- **Tests/evals: genuine or weakened?** When a PR changes tests, ask: "what could now pass that shouldn't?" Watch for granular checks replaced by coarse ones, content verification replaced by execution-only checks, and large simplifications (-600 lines) that lose capability.
-- **Cross-reference claims against reality.** If the PR claims to close issues, check the diff delivers each acceptance criterion. Check for stale references to deleted/renamed things. Distinguish pre-PR error reports (motivation for the fix) from post-PR reports (evidence of regression).
-- **Validate outputs against inputs.** Can the system's outputs actually be derived from its inputs? For ML: do features match what the model was trained on? For LLM agents: does the prompt encourage claims the structured tool outputs can't ground? (e.g., prompt examples show hourly breakdowns but the tool only computes daily aggregates.)
-- **Ask "where does X go?"** For each new artifact the PR introduces, check who consumes it, through what path, and whether the consumer resolves it. Watch for parallel pipelines doing similar things independently.
-- **Check dependency and environment assumptions.** Code that loads models or imports optional packages often fails silently when the environment doesn't match. Search for `try/except ImportError` and check whether new dependencies are in the right group (required vs optional).
-
-### 4. Question complexity that compensates for wrong architecture
-
-When new code introduces significant complexity to work around a constraint, ask whether the constraint itself should exist. The simplest fix is often to remove the constraint, not engineer around it.
-
-**Example from practice:** A panel chat feature added `sessionStorage` persistence, a `MutationObserver`, and a hydration layer to survive DOM resets on every note switch. All of it was correct. All of it was unnecessary — it existed solely because the chat was embedded in the same panel whose HTML gets replaced. A separate panel would have made the entire layer redundant.
-
-**How to do it:**
-- When you see a cluster of defensive code (persistence, observers, hydration, retry logic), ask: what is this defending against?
-- Trace that constraint back to its source. Is the constraint inherent to the problem, or is it an architectural choice that could be revisited?
-- If removing the constraint would eliminate the complexity, flag the architecture, not just the implementation.
-
-**Concrete checks (apply when relevant):**
-
-- **Refactor three-filter:** (1) shrinks the public interface? (2) would a YAGNI version solve ~80% of the friction? (3) is there real bug or test pain driving it? Drop candidates failing two.
-- **Deletion test for "shallow/façade" claims:** if removed, does complexity sink into helpers below (keep digging), scatter across callers (label is wrong, module is deep), or need re-derivation (module owns real logic)?
-
-### 5. Verify implicit contracts at system boundaries
-
-When code consumes something produced by a separate process — a trained model, a config file, a database schema, an API response, a data pipeline output — it relies on unspoken assumptions about what that thing contains. Each side looks correct in isolation. Bugs live at the seam, and silent degradation (column filtering, default values, fallback branches) means no error is raised.
-
-**Example from practice:** A serving PR loaded a pre-trained prediction model and listed `weight_kg` as an expected input feature. The serving code was correct. But loading the actual serialised model and inspecting `scaler.feature_names_in_` showed 66 features — `weight_kg` not among them. The training config (stored only in a remote experiment tracker, never committed) had a typo: `weight_kgs` instead of `weight_kg`. A silent column-intersection filter dropped the misspelled column without warning. The same config also recorded `baseline_choice: Ridge` while the actual model was XGBRegressor. Two metadata lies, one missing feature, zero errors raised. Found by crossing the code boundary and inspecting the artifact directly.
-
-**How to do it:**
-- Identify every boundary where the PR's code consumes something produced elsewhere (model artifacts, configs, schemas, API contracts, upstream pipeline outputs)
-- For each boundary, list the assumptions the code makes about the thing it consumes (expected columns, types, keys, response shapes)
-- Verify at least one assumption by inspecting the actual artifact — load the model, read the config, query the schema. Don't trust documentation or variable names alone
-- Look for silent adaptation patterns that hide mismatches: `df[df.columns.intersection(expected)]`, `.get(key, default)`, bare `except` clauses. These are where contract violations disappear instead of surfacing
-- Check whether the contract is enforced anywhere (schema validation, assertions, column-presence checks) or purely implicit. If implicit, flag the gap
+1. **Question the premise** - does this need to be built, or does it already exist internally or externally?
+2. **Trace the data flow end-to-end** - follow one value from entry to final use; the silent drop is in the middle.
+3. **Additional checks** - weakened tests, stale references, outputs not derivable from inputs, orphaned artifacts, environment assumptions.
+4. **Is the change COMPLETE, not just correct** - grep the concept's old form repo-wide; hunt the green test pinning the old contract; treat docs as callers.
+5. **Can this test actually fail** - circular assertions, silent skips, break it on purpose.
+6. **Complexity compensating for wrong architecture** - trace defensive clusters back to the constraint that forces them.
+7. **Implicit contracts at system boundaries** - inspect the artifact the code consumes; don't trust its variable names.
 
 ---
 
@@ -135,7 +265,12 @@ When code consumes something produced by a separate process — a trained model,
 Adapt the format to the PR. Don't force rigid sections when they add no value. The core deliverables are:
 
 ### Orientation
-What this PR does, why, and what it touches. Keep it short — the reviewer should understand scope in 30 seconds.
+What this PR does, why, and what it touches. Keep it short — the reviewer should understand scope in 30 seconds. State the pinned base and head SHAs, and whether the review ran isolated or in the main session.
+
+### Claim ledger
+The load-bearing claims from Step 2, each marked falsified / verified / unverified. One line
+each. This is the coverage statement for the review: it tells the human what was actually
+tested, which a findings list on its own never does.
 
 ### Change map
 A table grouping changes by area, with risk level (Low / Medium / High) and a one-line "why risky" for anything Medium or High.
@@ -146,13 +281,26 @@ Each finding needs:
 - **Title**: one line
 - **Evidence**: `path:line-range` or function name + searchable token
 - **Why it matters**: what breaks, what's silent, what's unverified
+- **Refutation attempted**: what you checked to try to kill this finding, and what you found
 - **Confidence**: High / Med / Low
 - **Recommendation**: what to do about it
 
 Severity guidance:
-- **Blocker**: likely bug, data corruption, silent failure masking real problems, fabricated/hallucinated outputs, model using wrong inputs
-- **Important**: correctness edge-case, weakened tests/evals, missing coverage for core behaviour, parameter silently ignored, dead code that misleads, a latent-unsafe path unguarded against a plausible wrong invocation (safe-as-invoked ≠ safe)
+- **Blocker**: merge should wait because a likely defect changes core behaviour, corrupts data,
+  invalidates decision-grade or published output, bypasses a required safety boundary, or
+  leaves a load-bearing defect demonstrably undetectable
+- **Important**: meaningful correctness edge-case, weakened tests/evals, missing coverage for
+  core behaviour, parameter silently ignored, dead code that misleads, or a latent-unsafe
+  path unguarded against a plausible wrong invocation (safe-as-invoked ≠ safe)
 - **Suggestion**: cleanup, stale references, minor inconsistency, nice-to-have tests
+
+When two lenses reached a finding independently, say which two and reflect that in
+confidence without mechanically changing severity.
+
+### Assumptions surfaced
+For each lens that returned no defect, the strongest assumption it was leaning on. These are
+the review's blind spots stated out loud, and they are often more useful to the human than a
+third Suggestion.
 
 ### Follow-ups
 Unrelated bugs surfaced during review go here as one-paragraph drafts, not folded into the in-flight PR's findings. Keeps the PR one-feature.
