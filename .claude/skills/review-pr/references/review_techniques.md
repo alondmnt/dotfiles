@@ -91,7 +91,7 @@ shared columns across two surfaces and silently skipped any that were blank on b
   quietly disappearing. The test should assert what it actually covered, not just that what it covered
   passed.
 - **Break it on purpose.** The strongest verification is to introduce the defect the test claims to
-  catch and confirm it fails. Do it in the throwaway worktree - see "Execution sandbox" in `SKILL.md`
+  catch and confirm it fails. Do it in the throwaway worktree - see "Throwaway execution checkout" in `SKILL.md`
   for the protocol and for why editing the real source beats monkeypatching.
 
 ### 6. Question complexity that compensates for wrong architecture
@@ -119,6 +119,6 @@ When code consumes something produced by a separate process — a trained model,
 **How to do it:**
 - Identify every boundary where the PR's code consumes something produced elsewhere (model artifacts, configs, schemas, API contracts, upstream pipeline outputs)
 - For each boundary, list the assumptions the code makes about the thing it consumes (expected columns, types, keys, response shapes)
-- Verify at least one assumption by inspecting the actual artifact — load the model, read the config, query the schema. Don't trust documentation or variable names alone
+- Verify the load-bearing assumptions against the persisted source using the read-only external-evidence protocol in `SKILL.md`. The source may be object storage, a data platform or catalogue, an experiment tracker, a model registry, a database, a job service, logs, or an API. Load the model, read the config, or query the schema; don't trust documentation or variable names alone
 - Look for silent adaptation patterns that hide mismatches: `df[df.columns.intersection(expected)]`, `.get(key, default)`, bare `except` clauses. These are where contract violations disappear instead of surfacing
 - Check whether the contract is enforced anywhere (schema validation, assertions, column-presence checks) or purely implicit. If implicit, flag the gap

@@ -1,29 +1,30 @@
 ---
 name: review-pr
-description: Review a GitHub pull request for defects, data integrity issues, and silent failures
-disable-model-invocation: true
-argument-hint: "[pr-number-or-url]"
-allowed-tools: Read, Grep, Glob, Edit, Write, AskUserQuestion, Bash(gh:*), Bash(git worktree:*), Bash(git fetch:*), Bash(git show:*), Bash(git diff:*), Bash(git log:*), Bash(git grep:*), Bash(git status:*), Bash(git rev-parse:*), Bash(python:*), Bash(python3:*), Bash(pytest:*)
+description: Review a GitHub pull request or base-to-head change set for actionable defects, data integrity issues, silent failures, incomplete migrations, and tests that can pass for the wrong reason. Use when asked to review, audit, red-team, or verify a PR or branch before merge.
 ---
 
 ## Instructions
 
 **Step 1 — Fetch PR context:**
 
-Check whether the user provided a PR number or URL after `/review-pr`. If yes, run these commands to fetch context (they are independent — run them in parallel):
+Check whether the user provided a PR number or URL. If yes, use the available GitHub
+integration or the `gh` CLI to fetch these independently:
+
 - `gh pr view <number>`
 - `gh pr diff <number> --name-only`
 - `gh pr diff <number>`
 
 Then proceed with the review below.
 
-If no PR was specified, run `gh pr list --state open --limit 20` to list open PRs, then use AskUserQuestion to ask the user which PR to review (use PR numbers as option labels). Once selected, fetch context with the three commands above and proceed.
+If no PR was specified, list open PRs and ask the user which one to review. Once selected,
+fetch the same context and proceed.
 
-**Pin the target.** Record the SHA you are reviewing and work from `git show <sha>` / `gh pr diff`
-rather than the working tree, which may be moving under you if the author is still committing. State the
-SHA in your output. Anything you execute runs against that SHA in a worktree (see "Execution
-sandbox"); a number taken from a tree that moved under you is uninterpretable and should be
-reported as such rather than quoted.
+**Pin both ends of the diff.** Record the base SHA and head SHA from the PR metadata. Read
+from `git show <head-sha>` and compare `git diff <base-sha>...<head-sha>` rather than using
+the working tree or a later live diff. State both SHAs in the output. Anything executed must
+run against the pinned head in a throwaway checkout. Before finalising, fetch the PR metadata
+again. If either endpoint moved, restart on the new pair or clearly report that the review
+covers the old pair. A result from an unpinned or moving tree is uninterpretable.
 
 **Step 2 — Enumerate what the PR claims:**
 
@@ -68,8 +69,9 @@ Three rules make the roster adversarial rather than decorative:
 - **No empty lens.** If a lens finds no defect, state the single strongest assumption it is
   leaning on and why that assumption is plausible. Don't manufacture cosmetics to fill a
   quota - an honest assumption is more useful to the human than a nitpick.
-- **Independent detection promotes.** When two lenses reach the same finding by different
-  routes, raise it one severity level. Overlap isn't intended, so it's evidence.
+- **Independent detection raises confidence, not severity.** When two lenses reach the same
+  finding by different routes, record the agreement and raise confidence if warranted.
+  Severity still follows consequence and likelihood; lens overlap alone never promotes it.
 - **Break the self-review trap.** If a lens comes up empty, read the relevant code bottom-up,
   state each function's contract before reading its body, and assume every external input
   could be malformed and every artifact load could silently return the wrong thing.
@@ -99,7 +101,7 @@ The refutations that land, roughly in order of how often they do:
 - the guard exists somewhere you didn't read - a caller, a decorator, config validation, a CI step
 - the input can't reach the state your failure scenario needs
 - the behaviour is deliberate and documented somewhere other than where you looked
-- you read a version of the file that isn't the pinned SHA
+- you read a version of the file outside the pinned base/head pair
 - the test you called circular does reach the real producer, one layer further down
 
 Refute by reading the code you skipped the first time, not by re-reading your own reasoning.
@@ -144,7 +146,7 @@ transcript. Isolate by default when any of these hold: you helped write or plan 
 the PR is merge-gating or decision-grade; the change reverses prior project memory; the
 review turns on subtle provenance or artifact consistency.
 
-Pass the isolated reviewer raw inputs only - PR number, pinned SHA, repo path, and any
+Pass the isolated reviewer raw inputs only - PR number, base SHA, head SHA, repo path, and any
 explicitly relevant file paths. Do **not** pass suspected bugs, expected findings, prior
 conclusions, or your own private reasoning. A reviewer seeded with your hypothesis returns
 confirmation, not a second opinion, and it will read as agreement.
@@ -153,7 +155,38 @@ Reviewing in the main session is fine for a quick triage pass. When you do, say 
 output and name the inherited context as a residual risk rather than leaving the reader to
 assume the review was independent.
 
-## Execution sandbox
+## Evidence modes
+
+Use the least expensive mode that can settle each load-bearing claim, and state which modes
+the review used:
+
+1. **Source inspection**: read the pinned diff, surrounding code, tests, configuration, and
+   repository process rules. Every review uses this mode.
+2. **External evidence inspection**: inspect persisted data or run evidence when a PR claim
+   depends on something outside the repository. This is distinct from running PR code.
+3. **PR-code execution**: run tests, reproducers, or defect injection in a throwaway checkout
+   when reading and persisted evidence cannot settle a consequential claim.
+
+### External research evidence
+
+Treat external systems generically. Evidence may live in object storage such as S3, GCS, or
+Azure Blob; a data platform or catalogue such as Databricks or Unity Catalog; an experiment
+tracker such as MLflow or Weights & Biases; a model registry; or a database, job service,
+log system, or API.
+
+Use a trusted read-only interface and the narrowest identity available. Start with the
+smallest check that can settle the claim: metadata, schema, counts, stable identifiers,
+completion state, or a few representative records. Download or recompute only when those
+checks are insufficient. Record stable provenance such as the URI, table or model version,
+run ID, workspace or region, object version, ETag, checksum, snapshot, or observation time.
+A local cache or export is not authoritative unless it is tied back to the persisted source.
+
+Never mutate external state as part of a review. Do not publish artifacts, alter tags or
+aliases, rerun jobs, promote models, or expose credentials or sensitive records. If access
+is unavailable or the identity of the artifact cannot be established, mark the claim
+`unverified` and name the exact read-only check that would settle it.
+
+## Throwaway execution checkout
 
 The adversarial stance above is free and applies to every PR. Executing costs time and a
 checkout, so spend it where being wrong is expensive: merge-gating PRs, changes to scoring,
@@ -161,15 +194,16 @@ eval or data paths, anything whose output feeds a published number, and any PR w
 claim cannot be settled by reading. A small refactor with green CI doesn't need it. Say which
 way you went and why - a review that only read should not sound like a review that ran.
 
-When you do execute, work in a throwaway worktree, never in the reviewed repo's tree:
+When you execute PR code, use a throwaway worktree, never the reviewed repository's active
+working tree:
 
 Put it under your scratchpad directory if the session has one, otherwise a temp path:
 
 ```bash
-git fetch origin pull/<number>/head:pr-<number>
-git worktree add <scratchpad>/review-pr-<number> <pinned-sha>
-# run, break, and read in <scratchpad>/review-pr-<number>
-git worktree remove <scratchpad>/review-pr-<number> --force
+git fetch origin pull/<number>/head
+git worktree add --detach <temporary-path>/review-pr-<number> <head-sha>
+# run, break, and read in <temporary-path>/review-pr-<number>
+git worktree remove <temporary-path>/review-pr-<number> --force
 ```
 
 `gh pr diff` works on any repo, but the worktree needs a local clone. If the PR is on a repo
@@ -181,19 +215,20 @@ Three rules:
 
 - **Never mutate the reviewed working tree.** The author may still be committing into it, and
   a review that leaves a dirty tree behind costs more than it found.
-- **Report what you ran, verbatim, with its result.** A quoted pass or failure is worth more
-  than any amount of reasoning about what a test probably does. If you only read it, say you
-  read it.
-- **Don't commit, push, or post from the sandbox.** It is for reading and breaking. Fixes and
+- **Report reproducible commands and their results.** Redact credentials, signed URLs, and
+  sensitive arguments. A concrete pass or failure is worth more than reasoning about what a
+  test probably does. If you only read it, say you read it.
+- **Don't commit, push, or post from the throwaway checkout.** It is for reading and breaking. Fixes and
   comments go to the author, and posting anywhere needs an explicit instruction first.
 
 **Defect injection** is the strongest verification available: introduce the bug a test claims
-to catch, and confirm the test fails. The sandbox is what makes it safe - edit the real
+to catch, and confirm the test fails. The throwaway checkout makes it safe - edit the real
 source, run, then discard the whole worktree rather than restoring by hand. Prefer editing
 source over monkeypatching: `from X import Y` binds into the importing module, so patching the
 source module's attribute leaves the test's binding untouched and makes a working guard look
-broken. A test that still passes with the defect in place is a Blocker, not a Suggestion - it
-is occupying the space where a real check would go.
+broken. A test that still passes with the defect in place is a finding. Size its severity by
+the consequence of the behaviour the test claims to protect; it is a Blocker only when the
+unprotected defect is itself merge-gating.
 
 ---
 
@@ -218,7 +253,7 @@ that makes it recognisable. Read that file before forming findings.
 Adapt the format to the PR. Don't force rigid sections when they add no value. The core deliverables are:
 
 ### Orientation
-What this PR does, why, and what it touches. Keep it short — the reviewer should understand scope in 30 seconds. State the pinned SHA, and whether the review ran isolated or in the main session.
+What this PR does, why, and what it touches. Keep it short — the reviewer should understand scope in 30 seconds. State the pinned base and head SHAs, and whether the review ran isolated or in the main session.
 
 ### Claim ledger
 The load-bearing claims from Step 2, each marked falsified / verified / unverified. One line
@@ -239,11 +274,16 @@ Each finding needs:
 - **Recommendation**: what to do about it
 
 Severity guidance:
-- **Blocker**: likely bug, data corruption, silent failure masking real problems, fabricated/hallucinated outputs, model using wrong inputs
-- **Important**: correctness edge-case, weakened tests/evals, missing coverage for core behaviour, parameter silently ignored, dead code that misleads, a latent-unsafe path unguarded against a plausible wrong invocation (safe-as-invoked ≠ safe)
+- **Blocker**: merge should wait because a likely defect changes core behaviour, corrupts data,
+  invalidates decision-grade or published output, bypasses a required safety boundary, or
+  leaves a load-bearing defect demonstrably undetectable
+- **Important**: meaningful correctness edge-case, weakened tests/evals, missing coverage for
+  core behaviour, parameter silently ignored, dead code that misleads, or a latent-unsafe
+  path unguarded against a plausible wrong invocation (safe-as-invoked ≠ safe)
 - **Suggestion**: cleanup, stale references, minor inconsistency, nice-to-have tests
 
-Note the promotion when two lenses reached a finding independently, and say which two.
+When two lenses reached a finding independently, say which two and reflect that in
+confidence without mechanically changing severity.
 
 ### Assumptions surfaced
 For each lens that returned no defect, the strongest assumption it was leaning on. These are
