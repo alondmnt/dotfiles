@@ -1,9 +1,20 @@
 ---
 name: review-pr
-description: Review a GitHub pull request or base-to-head change set for actionable defects, data integrity issues, silent failures, incomplete migrations, and tests that can pass for the wrong reason. Use when asked to review, audit, red-team, or verify a PR or branch before merge.
+description: Review a GitHub pull request or base-to-head change set for actionable defects, data integrity issues, silent failures, incomplete migrations, and tests that can pass for the wrong reason. Use when asked to review, audit, red-team, or verify a PR or branch before merge. This is a change-set review, not a full scientific review of decision-grade experiment designs, results, or campaign memory; use review-experiment separately when those are in scope.
 ---
 
-## Instructions
+# Review PR
+
+## Scope
+
+Review the pinned change set: completeness, interfaces, migrations, tests, documentation,
+regressions, and PR claims. Inspect external evidence only to verify a load-bearing PR claim
+or boundary contract. If the PR publishes a decision-grade experiment design, result, or
+campaign-memory update, also run `review-experiment` independently against the process
+context and source artifacts, recording both the PR head and artifact-producing source SHA.
+Combine only after both passes:
+deduplicate root causes, preserve both sets of evidence and unresolved disagreements, and use
+the base/head comparison to separate introduced defects from pre-existing limitations.
 
 **Step 1 — Fetch PR context:**
 
@@ -17,10 +28,13 @@ Then fetch the named files and patch for that base/head pair. In a local clone, 
 Without a local clone, use a GitHub comparison addressed by those SHAs or clone the
 repository. Do not use a moving `gh pr diff` as though it were pinned.
 
-If no PR was specified, list open PRs and ask the user which one to review. Once selected,
-fetch the same context and proceed.
+If the user supplied base and head refs, a branch comparison, or two SHAs without a PR,
+resolve them to immutable SHAs and review that pair directly. Record that PR description,
+comments, and contributor engagement are unavailable rather than asking the user to choose
+an unrelated open PR. Only list open PRs when no review target was supplied at all.
 
-**Pin both ends of the diff.** Record the base SHA and head SHA from the PR metadata. Read
+**Pin both ends of the diff.** Record the base SHA and head SHA from PR metadata or the
+resolved comparison refs. Read
 from `git show <head-sha>` and compare `git diff <base-sha>...<head-sha>` rather than using
 the working tree or a later live diff. State both SHAs in the output. Anything executed must
 run against the pinned head in a throwaway checkout. Before finalising, fetch the PR metadata
@@ -51,7 +65,8 @@ Read the diff and the surrounding code, applying the techniques in
 `references/review_techniques.md`, then put the claim list through four lenses. Each lens
 must report. A lens with nothing to say is usually a lens that wasn't run.
 
-- **Lens 0 — process contract.** Does the change obey the repo's own rules: `CLAUDE.md`,
+- **Lens 0 — repository and delivery contract.** Does the change obey the repo's own rules:
+  repository instruction files such as `AGENTS.md` or `CLAUDE.md`,
   the conventions the surrounding code already follows, one-feature commits, docs kept in
   step with the interfaces they document, the issues it claims to close actually closed?
 - **Lens A — the saboteur.** What makes this green for the wrong reason? Take each passing
@@ -59,8 +74,9 @@ must report. A lens with nothing to say is usually a lens that wasn't run.
   isn't the mechanism the author intends: a fixture standing in for the behaviour, a filter
   that silently drops the failing rows, a default that masks the missing value.
 - **Lens B — the statistician.** For any number the PR produces, moves, or relies on: does
-  the claim say more than the estimate, interval, sample size, or seed spread supports? Is
-  the comparator the right one? Would the number survive a rerun?
+  the implementation or PR description say more than the visible estimate, interval, sample
+  size, or seed spread supports? Is the comparator the claimed one? Keep this at change-set
+  level; route full design and decision-grade statistical validity to `review-experiment`.
 - **Lens C — the implementation auditor.** Does the code do what the PR description, the
   commit messages, and the docstrings say it does? Where they disagree, the code is the
   ground truth and the mismatch is the finding.
@@ -80,6 +96,9 @@ Three rules make the roster adversarial rather than decorative:
 Do **not** read PR comments or linked issue comments during Steps 2 and 3 — reading them first anchors you to others' framing and weakens independent analysis.
 
 **Step 4 — Fetch comments and refine:**
+
+If the target is a branch or SHA comparison without a PR, skip comment fetching and continue
+to self-refutation. Keep PR communication and contributor engagement marked unavailable.
 
 Run in parallel:
 - `gh pr view <number> --comments`
@@ -137,7 +156,9 @@ We are a data science team. Our PRs touch ML pipelines, data transformations, mo
 - **Current-run-correct is not enough — flag latent-unsafe paths.** When code is safe only because of how it happens to be invoked (a scorer that pins the validation baseline by convention with no guard against a test baseline; a fill value that's harmless only because eval never indexes it), and a plausible wrong invocation would silently leak, corrupt, or mis-score, that is a finding — sized by its blast radius, not by whether this run tripped it. Verifying the current run reproduces is necessary, not sufficient: say the run is clean *and* flag the unguarded path. This calibration is what most often separates a paranoid reviewer from a lenient one on a decision-grade gate; when in doubt on a gate, escalate the unguarded path rather than down-rate it to a provenance nitpick.
 - **Don't hallucinate repo context.** Only assume what's visible in the diff, PR description, or files you've read. If a concern depends on something you haven't seen, ask — don't assert. This includes explanations for observed behaviour: don't assert *why* existing code behaves a certain way without reading it. Verify before putting it in a contributor comment.
 - **Verify external references.** If a contributor references another plugin, library, or codebase to justify a design choice, fetch and read it before accepting the comparison. Don't characterise it based on inference.
-- **Read beyond the diff.** Use Read, Grep, and Glob to examine surrounding code when tracing data flows, verifying contracts, or checking for stale references. The diff alone is rarely sufficient.
+- **Read beyond the diff.** Use the host's available file inspection and fast text-search
+  capabilities, such as `rg`, to examine surrounding code when tracing data flows, verifying
+  contracts, or checking for stale references. The diff alone is rarely sufficient.
 - **Carry the outside reviewer's disposition — you are usually the only reviewer.** A genuinely different model family rarely reviews our code, so the value has to come from *how* this review is run, not from who runs it. Assume code is safe only by how it happens to be invoked until proven otherwise, and escalate an unguarded path (above) rather than down-rate it because this run didn't trip it. Run isolated (see below).
 
 **Large PRs:** For PRs over ~500 lines, prioritise logic and pipeline files over generated outputs, data files, and lock files. State what you deprioritised and why.
@@ -172,22 +193,10 @@ the review used:
 
 ### External research evidence
 
-Treat external systems generically. Evidence may live in object storage such as S3, GCS, or
-Azure Blob; a data platform or catalogue such as Databricks or Unity Catalog; an experiment
-tracker such as MLflow or Weights & Biases; a model registry; or a database, job service,
-log system, or API.
-
-Use a trusted read-only interface and the narrowest identity available. Start with the
-smallest check that can settle the claim: metadata, schema, counts, stable identifiers,
-completion state, or a few representative records. Download or recompute only when those
-checks are insufficient. Record stable provenance such as the URI, table or model version,
-run ID, workspace or region, object version, ETag, checksum, snapshot, or observation time.
-A local cache or export is not authoritative unless it is tied back to the persisted source.
-
-Never mutate external state as part of a review. Do not publish artifacts, alter tags or
-aliases, rerun jobs, promote models, or expose credentials or sensitive records. If access
-is unavailable or the identity of the artifact cannot be established, mark the claim
-`unverified` and name the exact read-only check that would settle it.
+When a load-bearing claim depends on data, models, or run evidence outside the repository,
+read [`references/external_evidence.md`](references/external_evidence.md) and follow its
+read-only protocol. Do not load it for repository-only reviews. Verify only the PR claim or
+boundary contract; independent scientific recomputation belongs to `review-experiment`.
 
 ## Throwaway execution checkout
 

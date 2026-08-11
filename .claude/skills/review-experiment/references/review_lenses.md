@@ -2,18 +2,19 @@
 
 Load this file when applying the review lenses from `SKILL.md`.
 Each check has one primary home. If the same issue is independently found by multiple
-lenses, promote its severity one level.
+lenses, record the agreement and raise confidence if warranted. Set severity from consequence
+and likelihood, not the number of lenses that detected it.
 
 ## Contents
 
-- Lens 0 - Process Contract Auditor
+- Lens 0 - Experiment Process Contract Auditor
 - Lens A - The Saboteur
 - Lens B - The Statistician
 - Lens C - The Implementation Auditor
 - Reasoning-chain Audit
 - Severity Guidance
 
-## Lens 0 - Process Contract Auditor
+## Lens 0 - Experiment Process Contract Auditor
 
 Check the artifact against the project process contract extracted from the supplied
 context:
