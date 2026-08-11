@@ -8,13 +8,14 @@ description: Review a GitHub pull request or base-to-head change set for actiona
 **Step 1 — Fetch PR context:**
 
 Check whether the user provided a PR number or URL. If yes, use the available GitHub
-integration or the `gh` CLI to fetch these independently:
+integration or the `gh` CLI to fetch PR metadata first, including the immutable endpoints:
 
-- `gh pr view <number>`
-- `gh pr diff <number> --name-only`
-- `gh pr diff <number>`
+- `gh pr view <number> --json number,title,body,url,baseRefName,headRefName,baseRefOid,headRefOid`
 
-Then proceed with the review below.
+Then fetch the named files and patch for that base/head pair. In a local clone, use
+`git diff --name-only <base-sha>...<head-sha>` and `git diff <base-sha>...<head-sha>`.
+Without a local clone, use a GitHub comparison addressed by those SHAs or clone the
+repository. Do not use a moving `gh pr diff` as though it were pinned.
 
 If no PR was specified, list open PRs and ask the user which one to review. Once selected,
 fetch the same context and proceed.
@@ -86,6 +87,8 @@ Run in parallel:
 
 Refine your findings using these to:
 - Retract or downgrade findings already resolved in prior review rounds
+- Treat a claimed resolution as in scope only when its fix exists in the pinned head. A
+  comment about a later commit does not resolve a finding against the reviewed pair.
 - Distinguish pre-PR reports from post-PR reports in linked issues. **Pre-PR error reports are the motivation for the fix, not evidence against it.** Only post-PR reports are evidence of regressions introduced by this PR.
 - Revisit root-cause diagnoses: if the thread shows a proposed fix was already tried and failed, revise the diagnosis accordingly.
 
@@ -206,6 +209,14 @@ git worktree add --detach <temporary-path>/review-pr-<number> <head-sha>
 git worktree remove <temporary-path>/review-pr-<number> --force
 ```
 
+A worktree makes source mutations disposable; it is not a process-security boundary. It
+shares the host, credentials, network, and Git object store. Treat code, tests, build hooks,
+and dependency installers from the PR as untrusted. Run them only inside the host's real
+execution boundary, such as its sandbox, container, or disposable VM, with credentials
+removed and network disabled unless the check requires it. If that boundary is unavailable
+or execution needs new authority, request approval or leave the claim unverified. Never
+imply that a worktree alone made arbitrary PR code safe to execute.
+
 `gh pr diff` works on any repo, but the worktree needs a local clone. If the PR is on a repo
 you don't have, either `gh repo clone` it first or say plainly that the review was
 read-only because the code wasn't available to run - don't quietly drop to reading and
@@ -222,8 +233,9 @@ Three rules:
   comments go to the author, and posting anywhere needs an explicit instruction first.
 
 **Defect injection** is the strongest verification available: introduce the bug a test claims
-to catch, and confirm the test fails. The throwaway checkout makes it safe - edit the real
-source, run, then discard the whole worktree rather than restoring by hand. Prefer editing
+to catch, and confirm the test fails. The throwaway checkout makes the source edit disposable;
+execution safety still comes from the boundary above. Edit the real source, run, then discard
+the whole worktree rather than restoring by hand. Prefer editing
 source over monkeypatching: `from X import Y` binds into the importing module, so patching the
 source module's attribute leaves the test's binding untouched and makes a working guard look
 broken. A test that still passes with the defect in place is a finding. Size its severity by
