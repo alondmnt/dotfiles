@@ -1,8 +1,6 @@
 ---
 name: review-experiment
-description: Critically review a research experiment against a supplied project process context - its DESIGN before a sweep (a prereg or spec - bar, estimand, cohort, power/MDE, pre-committed gate) or its RESULTS after (an iteration summary, registry, findings document, sweep result, or reasoning chain), and re-derive decision-grade numbers from their source artifacts before they enter canonical memory (the propagation gate). Use to review, audit, stress-test, red-team, or recompute; focuses on design validity, claim/evidence consistency, local process-contract compliance, statistical validity, implementation fidelity, and unresolved assumptions. Run isolated - a fresh sub-agent that never saw the working transcript - for any decision-grade or memory-updating review.
-disable-model-invocation: true
-argument-hint: "[artifact-or-prereg-path]"
+description: Critically review a research experiment against supplied project process context, either its DESIGN before a sweep or its RESULTS, registry, findings, or reasoning chain afterwards. Use to audit, stress-test, red-team, or recompute decision-grade evidence before it enters canonical memory, focusing on design validity, claim/evidence consistency, experiment-process compliance, statistical validity, implementation fidelity, and unresolved assumptions. Run isolated for any decision-grade or memory-updating review. This is not a comprehensive change-set review; use review-pr separately when the experiment is delivered through a PR.
 ---
 
 # Review Experiment
@@ -10,6 +8,17 @@ argument-hint: "[artifact-or-prereg-path]"
 Use this skill as an adversarial reviewer for iterative research workflows. Treat the
 project's process context as the source of truth; this skill supplies the review method,
 not project-specific rules.
+
+## Scope
+
+Review the experiment design, result, or reasoning chain: cohort, estimand, power,
+statistics, alternative explanations, implementation fidelity, and canonical-memory
+propagation. Read code only to validate those claims. If the artifact is delivered through a
+PR, also run `review-pr` independently on the pinned base/head pair and give this review both
+the PR head and artifact-producing source SHA. Combine only after both passes: deduplicate
+root causes, preserve evidence
+and unresolved disagreements, and distinguish PR-introduced defects from pre-existing
+scientific limitations.
 
 ## Modes
 
@@ -22,12 +31,13 @@ not project-specific rules.
 - **Design / prereg (pre-sweep)**: a plan, prereg, or spec is in scope *before* the sweep or
   screen runs. Review the design, not results — is the bar the right one, the estimand what
   the author means to measure, the cohort one that generalises, the power/MDE honestly
-  stated, and the gate pre-committed and falsifiable? Reuses Lens 0 (Process Contract
-  Auditor) and Lens B (the Statistician); Lens A (the Saboteur) becomes "what would make a
-  positive result uninformative"; Lens C (Implementation Auditor) mostly does not apply
-  before results exist. Catches design errors a post-analysis review can only find after the
-  compute is spent (a hyperparameter-parity mismatch, an underpowered cohort, a bar that
-  can't measure the axis).
+  stated, and the gate pre-committed and falsifiable? Reuses Lens 0 (Experiment Process
+  Contract Auditor) and Lens B (the Statistician); Lens A (the Saboteur) becomes "what would
+  make a positive result uninformative". Apply Lens C only when implementation,
+  configuration, or a launch path already exists; otherwise record it as not applicable
+  because there is no implementation to audit. Catches design errors a post-analysis review
+  can only find after the compute is spent (a hyperparameter-parity mismatch, an underpowered
+  cohort, a bar that can't measure the axis).
 
 Per-iteration and registry are post-analysis; design mode runs before either. If both
 post-analysis modes apply, start per-iteration, then extend to registry mode.
@@ -41,6 +51,7 @@ Accept, when available:
 - registry, findings, or campaign-memory path
 - prereg / plan / spec path (design mode) — the spec to review before any result exists
 - referenced code or artifact paths
+- repository and pinned code/source SHA when implementation fidelity is in scope
 
 **Pass the prereg/spec, not just the artefact.** In design mode the object under review is the
 plan itself; in post-analysis modes, the summary's declared bar/estimand/gate are only checkable
@@ -96,7 +107,7 @@ confidence as High, Medium, or Low.
 
 ## Workflow
 
-### Step 1 - Build The Project Process Contract
+### Step 1 - Build The Experiment Process Contract
 
 Read the supplied process context first. Extract the local rules without importing
 project assumptions from this skill:
@@ -138,6 +149,12 @@ Read in order:
 Avoid reading prior iteration summaries until registry-chain review or until chasing a
 specific discrepancy; prior narratives can anchor the review too early.
 
+### Authoritative External Evidence
+
+When a headline claim or gate depends on persisted evidence outside the repository, read
+[`references/external_evidence.md`](references/external_evidence.md) and follow its
+read-only recomputation protocol. Do not load it for local-only designs or artifacts.
+
 ### Multi-section Summaries
 
 A single summary may contain appended sections from successive commits, synthetic then
@@ -151,11 +168,16 @@ another because code changed after the artifact was written.
 
 Use `references/review_lenses.md` for detailed checks.
 
-Each check should have one primary home. Overlap is not intended, but independent
-detection is meaningful: promote a finding one severity level when it is reached by two
-or more lenses.
+Each check should have one primary home. Overlap is not intended, but independent detection
+is meaningful: record the agreement and raise confidence if warranted. Severity follows the
+consequence and likelihood of the issue; lens overlap alone never promotes it.
 
-- **Lens 0 - Process Contract Auditor.** Does the artifact obey the local process it
+All applicable lenses must report. In design mode, a genuinely absent implementation makes
+Lens C not applicable rather than empty: state that fact and do not invoke the empty-lens
+bottom-up code-reading fallback. If code, configuration, or launch machinery exists, Lens C
+applies normally.
+
+- **Lens 0 - Experiment Process Contract Auditor.** Does the artifact obey the local process it
   claims to follow?
 - **Lens A - The Saboteur.** Can the result be explained as a data, optimization,
   evaluation, or selection artifact rather than the stated hypothesis?
@@ -205,11 +227,11 @@ Adapt to the artifact; do not force empty sections.
   and why this review is higher or lower risk than typical.
 - **Review isolation**: say whether the review used a fresh sub-agent/fork/thread or the
   main session; if main-session, name the residual contamination risk.
-- **Process contract extracted**: short list of the local rules that mattered most.
+- **Experiment process contract extracted**: short list of the local rules that mattered most.
 - **Risk map**: table of area | risk | one-line reason for Medium/High.
 - **Findings, prioritized**: severity, lens(es), title, evidence, why it matters, and
-  confidence or "unverified - depends on X". Note severity promotion when two or more
-  lenses independently detect the issue.
+  confidence or "unverified - depends on X". Note independent multi-lens agreement as
+  confidence evidence without mechanically changing severity.
 - **Assumptions surfaced**: for each lens with no finding, the strongest remaining
   assumption.
 - **Questions**: 2-3 questions that would most reduce residual risk; do not bury a

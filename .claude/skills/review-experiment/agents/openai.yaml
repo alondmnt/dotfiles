@@ -1,4 +1,4 @@
 interface:
   display_name: "Review Experiment"
-  short_description: "Audit research experiment evidence"
-  default_prompt: "Use $review-experiment to audit this iteration summary against its project process context."
+  short_description: "Audit decision-grade research evidence"
+  default_prompt: "Use $review-experiment to audit this experiment against its process context and authoritative evidence."

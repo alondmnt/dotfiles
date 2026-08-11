@@ -119,6 +119,8 @@ When code consumes something produced by a separate process — a trained model,
 **How to do it:**
 - Identify every boundary where the PR's code consumes something produced elsewhere (model artifacts, configs, schemas, API contracts, upstream pipeline outputs)
 - For each boundary, list the assumptions the code makes about the thing it consumes (expected columns, types, keys, response shapes)
-- Verify the load-bearing assumptions against the persisted source using the read-only external-evidence protocol in `SKILL.md`. The source may be object storage, a data platform or catalogue, an experiment tracker, a model registry, a database, a job service, logs, or an API. Load the model, read the config, or query the schema; don't trust documentation or variable names alone
+- Verify load-bearing assumptions against the persisted source. When it is external, follow
+  [`external_evidence.md`](external_evidence.md). Load the model, read the config, or query
+  the schema; don't trust documentation or variable names alone
 - Look for silent adaptation patterns that hide mismatches: `df[df.columns.intersection(expected)]`, `.get(key, default)`, bare `except` clauses. These are where contract violations disappear instead of surfacing
 - Check whether the contract is enforced anywhere (schema validation, assertions, column-presence checks) or purely implicit. If implicit, flag the gap
